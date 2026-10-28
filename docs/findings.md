@@ -9,6 +9,15 @@ Per-plan notes on each figure/experiment. One to two sentences per plot.
 - `f3_snr_sample.png`: received SNR per class is stable under nominal conditions and drops by roughly the +15 dB shadow during the shaded window (slots 150-350), as expected from the shadowing hook.
 - `f4_queue_overload.png`: with service below arrivals, all three queues grow roughly linearly; Emergency grows slowest (lowest arrival rate), confirming the fluid queue update direction.
 
+## Phase 2 — Gymnasium environment + baselines
+
+- `results/phase2/baselines.csv`: nominal load calibrated to 53.9% of mean achievable capacity (target 50-60%).
+- `results/phase2/baseline_delay.png`: Emergency delay over one nominal episode per baseline.
+- Acceptance claims verified:
+  - Nominal: `strict_priority` SOS violation 0.1% vs `greedy_sum_rate` 99.9% (greedy starves Emergency because it sits at the worst channel, 400 m).
+  - Surge (4x Emergency): `fair_share` 0.4% vs `strict_priority` 0.1% (fair share fails to protect Emergency under surge).
+- This validates the mid-term slide 5 claim that greedy sum-rate harms delay-critical Emergency traffic.
+
 ## Phase 0 — Tooling
 
 - `pip install -e ".[dev]" && pytest -q` passes on a clean venv. Python 3.13.5 used (plan specified 3.11, not installed; logged in docs/decision_log.md).

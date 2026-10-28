@@ -54,10 +54,11 @@ def test_empirical_los_fraction_within_3pct():
     ch = Channel(n_classes=1, H=100.0, fc=2e9, los_stay_prob=0.98, rng=rng)
     radius = np.array([100.0])
     p_theory = float(p_los(ch.elevation_angle_deg(radius)[0]))
+    ch.set_geometry(radius)
     n = 20000
     count = 0
     for _ in range(n):
-        ch.update(radius, shadow_db=0.0)
+        ch.update(shadow_db=0.0)
         count += int(ch.los_state[0])
     empirical = count / n
     assert abs(empirical - p_theory) < 0.03

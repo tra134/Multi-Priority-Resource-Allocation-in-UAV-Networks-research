@@ -23,3 +23,6 @@ Format: date, what, why. (Rule 9 of plan.md Section 0.)
 | 2026-10-28 | Python 3.13.5 used instead of 3.11 | 3.11 is not installed on this machine; 3.13 is available and all target libraries support it |
 | 2026-10-28 | `.gitignore` ignores `results/`, `checkpoints/`, `venv/`, `.env` | Per plan.md Section 2: large outputs and secrets are not committed |
 | 2026-10-28 | `uv` available but using standard `python3 -m venv` + pip | Simplest, most portable option; uv can be used later |
+| 2026-10-28 | Observation is 17-dim, not 16-dim as plan.md Section 4 states | The listed components (3+3+3+1+1+6) sum to 17; following the explicit component list |
+| 2026-10-28 | `reset()` seeds `action_space` and `observation_space` | gymnasium does not auto-seed spaces; needed for reproducible trajectories |
+| 2026-10-28 | Bare-env speed is ~6k-8k steps/s, below the 20,000 steps/s target in plan.md rule 8 | Pure Python + NumPy per-step overhead (~150µs/step) on this CPU; profiling done. 300k training steps still take < 1 min per seed, sufficient for CPU development. Long runs target Colab. Noted as a known gap; revisit with a compiled hot path if needed. |

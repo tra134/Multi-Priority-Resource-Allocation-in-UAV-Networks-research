@@ -27,9 +27,9 @@ channel:
   P_max: 1.0                    # total power [W]
 
 traffic:
-  emergency_mean_mbps: 0.5
-  important_mean_mbps: 8.0
-  normal_mean_mbps: 6.0
+  emergency_mean_mbps: 2.0
+  important_mean_mbps: 35.0
+  normal_mean_mbps: 28.0        # total 65 Mbps (~51% of the ~127 Mbps nominal capacity)
   packet_bytes: 200
   queue_cap_mbit: 2.0           # per-class queue cap; overflow counted as drops
   delay_clip_s: 1.0
@@ -71,6 +71,9 @@ fallback:
   emg_power: 0.8
   imp_remainder: 0.6
   norm_remainder: 0.4
+
+users:
+  radius_m: [400.0, 250.0, 100.0]  # Emergency farthest (greedy starves it); fixed per episode
 
 training:
   steps: 300000
