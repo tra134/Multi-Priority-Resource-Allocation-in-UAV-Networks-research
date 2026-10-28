@@ -1,0 +1,17 @@
+# S5 - Unseen magnitude: surge 8x, shadow +25 dB
+name: unseen
+description: out-of-distribution magnitude (surge 8x, shadow +25 dB)
+traffic:
+  emergency_mean_mbps: 0.5
+  important_mean_mbps: 8.0
+  normal_mean_mbps: 6.0
+channel:
+  shadow_db: 25.0
+  surge_multiplier: 8.0
+disturbance:
+  type: compound
+  surge_multiplier: 8.0
+  shadow_db: 25.0
+  duration_slots: 400
+  start_slot: [500, 1200]
+ood: true

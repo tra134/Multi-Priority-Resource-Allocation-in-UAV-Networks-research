@@ -1,0 +1,16 @@
+# S2 - Deep shadowing: +15 dB for 400 slots
+name: shadow
+description: deep shadowing window
+traffic:
+  emergency_mean_mbps: 0.5
+  important_mean_mbps: 8.0
+  normal_mean_mbps: 6.0
+channel:
+  shadow_db: 15.0
+  surge_multiplier: 1.0
+disturbance:
+  type: shadow
+  extra_db: 15.0
+  duration_slots: 400
+  start_slot: [500, 1200]
+ood: true

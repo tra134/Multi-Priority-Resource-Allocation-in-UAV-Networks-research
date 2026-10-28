@@ -1,0 +1,83 @@
+# UAV Multi-Priority Resource Allocation - default configuration
+# See plan.md Section 4 (Default parameters). Deviations are logged in docs/decision_log.md.
+
+timing:
+  slot_ms: 5
+  episode_slots: 2000
+  D_th: 15.0                    # Emergency delay threshold [ms] (= 3 slots)
+  llm_latency_median_ms: 350    # nominal LLM latency (lognormal)
+  llm_latency_p5_ms: 200
+  llm_latency_p95_ms: 800
+  llm_timeout_ms: 1000
+  stress_latency_median_ms: 2000  # Scenario S3
+
+channel:
+  a: 9.61                       # Al-Hourani urban A2G parameters
+  b: 0.16
+  eta_LoS_db: 1.0
+  eta_NLoS_db: 20.0
+  H: 100.0                      # UAV altitude [m], fixed hover
+  fc: 2.0e9                     # carrier frequency [Hz]
+  los_stay_prob: 0.98           # sticky LoS/NLoS Markov chain
+  rician_K_db: 10.0
+  fading_ar1: 0.9               # small-scale fading correlation across slots
+  noise_dbm_hz: -174.0
+  noise_figure_db: 7.0
+  B_max: 1.0e7                  # total bandwidth [Hz]
+  P_max: 1.0                    # total power [W]
+
+traffic:
+  emergency_mean_mbps: 0.5
+  important_mean_mbps: 8.0
+  normal_mean_mbps: 6.0
+  packet_bytes: 200
+  queue_cap_mbit: 2.0           # per-class queue cap; overflow counted as drops
+  delay_clip_s: 1.0
+
+observation:
+  window: 50                    # sliding window W for violation fraction feature
+
+reward:
+  w_emg: 1.0
+  w_imp: 0.5
+  w_norm: 0.1
+  lambda_pen: 5.0
+  R_target: 6.0e6               # Important target rate [bps]
+  R_norm_ref: null              # set at calibration (nominal capacity share)
+
+sac:
+  N_critics: 10                 # REDQ-style ensemble (ablate 1, 2, 5, 10)
+  gamma: 0.99
+  lr: 3.0e-4
+  batch: 256
+  tau: 0.005
+  buffer_size: 1000000
+  hidden: [256, 256]
+  G: 1                          # update-to-data ratio
+
+trigger:
+  tau_unc: null                 # calibrated in Phase 5 (99th percentile, in-dist)
+  theta_queue: null             # tuned in Phase 7
+  debounce_m: 3
+  cooldown: 50                  # slots (= 250 ms)
+  ttl_slots: 600                # LLM mask TTL (= 3 s)
+  max_call_rate: 0.05           # target: at most 5% of slots
+
+fallback:
+  bw_floor_emg: 0.8
+  power_floor_emg: 0.8
+  fallback_slots: 200           # slots (= 1 s)
+  emg_bw: 0.8
+  emg_power: 0.8
+  imp_remainder: 0.6
+  norm_remainder: 0.4
+
+training:
+  steps: 300000
+  ckpt_every: 10000
+  resume: true
+  domain_randomization:
+    arrival_rate_min: 0.8
+    arrival_rate_max: 1.2
+    shadow_max_db: 3.0
+    surge_max: 1.5

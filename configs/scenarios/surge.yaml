@@ -1,0 +1,16 @@
+# S1 - Traffic surge: Emergency arrivals 4x for 2 s (400 slots), start random in [500, 1200]
+name: surge
+description: Emergency traffic surge
+traffic:
+  emergency_mean_mbps: 0.5
+  important_mean_mbps: 8.0
+  normal_mean_mbps: 6.0
+channel:
+  shadow_db: 0.0
+  surge_multiplier: 4.0
+disturbance:
+  type: surge
+  multiplier: 4.0
+  duration_slots: 400
+  start_slot: [500, 1200]  # random start within this range
+ood: true

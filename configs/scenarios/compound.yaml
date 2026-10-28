@@ -1,0 +1,18 @@
+# S4 - Compound: S1 + S2 + S3
+name: compound
+description: surge + shadow + LLM latency degradation
+traffic:
+  emergency_mean_mbps: 0.5
+  important_mean_mbps: 8.0
+  normal_mean_mbps: 6.0
+channel:
+  shadow_db: 15.0
+  surge_multiplier: 4.0
+disturbance:
+  type: compound
+  surge_multiplier: 4.0
+  shadow_db: 15.0
+  duration_slots: 400
+  start_slot: [500, 1200]
+  latency_median_ms: 2000   # S3: LLM API degradation
+ood: true

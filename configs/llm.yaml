@@ -1,0 +1,25 @@
+# LLM arbiter configuration (Phase 7-8)
+# OpenAI-compatible endpoint: env vars LLM_BASE_URL, LLM_API_KEY, LLM_MODEL override these.
+
+llm:
+  base_url: null        # from env LLM_BASE_URL
+  api_key: null         # from env LLM_API_KEY
+  model: null           # from env LLM_MODEL
+  temperature: 0.0
+  max_tokens: 200
+  response_format_json: true   # if endpoint supports it; otherwise "JSON only" instruction + parser
+  retry_max: 1
+
+prompt:
+  few_shot_examples: 3
+  round_sigfigs: 2              # cache key rounding
+
+cache:
+  enabled: true
+  dir: results/llm_cache
+
+failure_injection:
+  p_invalid_json: 0.0
+  p_out_of_range: 0.0
+  p_wrong_diagnosis: 0.0
+  p_timeout: 0.0
