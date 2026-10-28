@@ -9,6 +9,18 @@ Per-plan notes on each figure/experiment. One to two sentences per plot.
 - `f3_snr_sample.png`: received SNR per class is stable under nominal conditions and drops by roughly the +15 dB shadow during the shaded window (slots 150-350), as expected from the shadowing hook.
 - `f4_queue_overload.png`: with service below arrivals, all three queues grow roughly linearly; Emergency grows slowest (lowest arrival rate), confirming the fluid queue update direction.
 
+## Phase 6 — Safety layer (mask, projection, fallback, rule shield)
+
+- control/mask.py: Mask dataclass (bw_floor[3], power_floor_emg, expires_at);
+  project() guarantees b>=f, sum(b)=1, requires sum(f)<=1, rejects invalid masks.
+- control/fallback.py: fixed safe allocation [0.8, 0.12, 0.08] for bw and power.
+- baselines/rule_shield.py: queue-triggered mask (theta_queue, m consecutive,
+  TTL, cooldown), zero-latency and delayed (350 ms) variants.
+- tests/test_mask.py: projection feasibility/floors, invalid-mask rejection,
+  expiry, fallback shares, Rule-Shield surge behavior, budget constraints over
+  1e5 random steps.
+- Verified: budget constraints hold (sum b = sum p = 1) over 1e5 random steps.
+
 ## Phase 5 — Uncertainty analysis (Claim A)
 
 - `src/uavrl/uncertainty/calibration.py`: U_t = ensemble std of Q(s,a); normalized U/(|meanQ|+c); percentile calibration; AUROC/precision/recall/lead-time; rank-based AUROC.

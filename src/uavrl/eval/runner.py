@@ -12,6 +12,8 @@ import numpy as np
 def run_episode(env, policy, seed=None):
     """Run a single episode; return (steps: list[dict], summary: dict)."""
     obs, _ = env.reset(seed=seed)
+    if hasattr(policy, "reset"):
+        policy.reset()
     info = {}
     steps = []
     done = False
