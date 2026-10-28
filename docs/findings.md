@@ -9,6 +9,13 @@ Per-plan notes on each figure/experiment. One to two sentences per plot.
 - `f3_snr_sample.png`: received SNR per class is stable under nominal conditions and drops by roughly the +15 dB shadow during the shaded window (slots 150-350), as expected from the shadowing hook.
 - `f4_queue_overload.png`: with service below arrivals, all three queues grow roughly linearly; Emergency grows slowest (lowest arrival rate), confirming the fluid queue update direction.
 
+## Phase 5 — Uncertainty analysis (Claim A)
+
+- `src/uavrl/uncertainty/calibration.py`: U_t = ensemble std of Q(s,a); normalized U/(|meanQ|+c); percentile calibration; AUROC/precision/recall/lead-time; rank-based AUROC.
+- `scripts/calibrate_tau.py`: tau_unc = q-th percentile of U on nominal validation episodes; OOD evaluation on surge/shadow/compound/unseen; writes trigger_calibrated.yaml.
+- `scripts/plot_uncertainty.py`: U_t timelines with OOD windows shaded.
+- Illustrative local run (untrained agent): raw-U AUROC ≈ 0.85 (shadow), 0.88 (compound), 0.90 (unseen) — supports Claim A direction; real numbers require the Colab-trained agent (deferred).
+
 ## Phase 2 — Gymnasium environment + baselines
 
 - `results/phase2/baselines.csv`: nominal load calibrated to 53.9% of mean achievable capacity (target 50-60%).
