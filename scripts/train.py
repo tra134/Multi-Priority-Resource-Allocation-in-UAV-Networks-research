@@ -163,8 +163,9 @@ def main():
         rng=rng,
     )
 
+    run_name = f"{args.agent}_seed{args.seed}_N{sac_cfg.get('N_critics', 10)}"
     if args.resume:
-        ckpt = os.path.join(args.ckpt_dir, f"sac_seed{args.seed}_latest.pt")
+        ckpt = os.path.join(args.ckpt_dir, f"{run_name}_latest.pt")
         if os.path.exists(ckpt):
             agent.load(ckpt)
             print(f"[resume] loaded {ckpt}")
@@ -172,7 +173,6 @@ def main():
             print(f"[resume] checkpoint {ckpt} not found; starting from scratch")
 
     # ---- logging
-    run_name = f"{args.agent}_seed{args.seed}_N{sac_cfg.get('N_critics', 10)}"
     tb = SummaryWriter(os.path.join(args.tb_dir, run_name))
     os.makedirs(args.ckpt_dir, exist_ok=True)
 
