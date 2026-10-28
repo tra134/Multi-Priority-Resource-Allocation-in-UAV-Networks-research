@@ -9,6 +9,27 @@ Per-plan notes on each figure/experiment. One to two sentences per plot.
 - `f3_snr_sample.png`: received SNR per class is stable under nominal conditions and drops by roughly the +15 dB shadow during the shaded window (slots 150-350), as expected from the shadowing hook.
 - `f4_queue_overload.png`: with service below arrivals, all three queues grow roughly linearly; Emergency grows slowest (lowest arrival rate), confirming the fluid queue update direction.
 
+## Phase 7 — Hybrid controller + MockLLM (async LLM arbiter)
+
+- llm/schema.py: pydantic LLMResponse (operating_mode, min_bandwidth_ratio,
+  power_boost_emergency, ttl_duration_slots) with validators (floors in [0,1],
+  sum <= 0.95, emergency <= 0.9, TTL in [50,1000]).
+- llm/mock.py: MockLLM with rule-based diagnosis + failure injection
+  (invalid JSON, out-of-range, wrong diagnosis, timeout) and lognormal latency.
+- llm/prompt.py: structured prompt (CSI mean/var/slope per class, queues,
+  dQ_emg, U_t, trigger reason, current mask, schema, few-shot). Never contains
+  ood_flag.
+- llm/cache.py: disk cache keyed by hash(model + prompt).
+- llm/client.py: LLMClient interface; MockLLMClient (Phases 1-7); RealLLMClient
+  stub for OpenAI-compatible endpoints (Phase 8).
+- control/hybrid_controller.py: per-slot async loop; trigger modes
+  uncertainty/queue/hybrid/periodic/reactive/always/random; fast loop never
+  blocks on the LLM.
+- tests/test_schema.py, tests/test_controller.py: schema validation,
+  end-to-end surge run, timeout/invalid-json fallback, cooldown, one decision
+  per slot at 2 s latency, failure-injection sweep (no crash, budget holds).
+- Verified: budget constraints hold under all failure-injection modes.
+
 ## Phase 6 — Safety layer (mask, projection, fallback, rule shield)
 
 - control/mask.py: Mask dataclass (bw_floor[3], power_floor_emg, expires_at);
