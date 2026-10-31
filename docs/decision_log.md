@@ -27,3 +27,18 @@ Format: date, what, why. (Rule 9 of plan.md Section 0.)
 | 2026-10-28 | `reset()` seeds `action_space` and `observation_space` | gymnasium does not auto-seed spaces; needed for reproducible trajectories |
 | 2026-10-28 | Bare-env speed is ~6k-8k steps/s, below the 20,000 steps/s target in plan.md rule 8 | Pure Python + NumPy per-step overhead (~150µs/step) on this CPU; profiling done. 300k training steps still take < 1 min per seed, sufficient for CPU development. Long runs target Colab. Noted as a known gap; revisit with a compiled hot path if needed. |
 | 2026-10-28 | Mask projection `b = f + (1-sum(f))*r` is not fixed-point idempotent | The plan's test lists "projection idempotent", but the specified formula only has `b = f/sum(f)` as a fixed point. The map always yields a feasible share (b>=f, sum=1), which is the safety-relevant invariant. Test adjusted to feasibility preservation. |
+
+## Phase 8 decisions (real LLM integration)
+
+| Date | Decision | Why |
+|------|----------|-----|
+| 2026-10-31 | Default provider is Groq at `https://api.groq.com/openai/v1` | HUMAN supplied a Groq key; the endpoint is OpenAI-compatible, so no provider-specific code is needed |
+| 2026-10-31 | `max_tokens` raised from 200 to 512 | GPT-OSS emits reasoning tokens before the JSON; 512 avoids truncating the answer while staying small |
+| 2026-10-31 | Default model is `openai/gpt-oss-120b` | Groq deprecated `llama-3.3-70b-versatile` and `llama-3.1-8b-instant` on 2026-08-16; gpt-oss-120b (or `qwen/qwen3.6-27b`) is Groq's replacement |
+| 2026-10-31 | API key stored only in `.env`; `configs/llm.yaml` keeps `api_key: null` | Rule: never commit keys. `.env` is gitignored; `.env.example` documents the variables |
+| 2026-10-31 | `RealLLMClient` uses the official `openai` SDK instead of importing `httpx` directly | `openai` is already a project dependency and handles retries/timeouts/base URLs; the old code imported `httpx`, which was not installed (Python 3.13 venv has `httpx2`) |
+| 2026-10-31 | `RealLLMClient.call()` never raises; network/JSON/schema errors return `ok=False` | The controller must always reach the safety fallback; a provider outage must not crash the fast loop |
+| 2026-10-31 | Added tolerance `1e-9` to the `sum(floors) <= 0.95` validator | `0.6 + 0.2 + 0.15` evaluates to `0.9500000000000001` in floating point and was wrongly rejected |
+| 2026-10-31 | Fixed MockLLM and prompt few-shot floors to sum to <= 0.95; fixed controller validation calling `.to_mask()` on a dict | Both bugs made every "valid" LLM response fall through to fallback, so the successful mask path had never been exercised. Regression tests added |
+| 2026-10-31 | Smoke test defaults to 20 synthetic triggered situations (10 surge, 10 deep fading) | Cheap Phase 8 check without a trained checkpoint; uses the same prompt builder and schema as the controller |
+| 2026-10-31 | Groq live calls return `403 Access denied` from this machine (Cloudflare, HKG edge) | Network/region restriction, not a code or key failure. Live smoke test deferred to an allowed network; MockLLM path verified locally |

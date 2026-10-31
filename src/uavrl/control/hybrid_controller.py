@@ -173,8 +173,8 @@ class HybridController:
             for resp in self.pending_responses:
                 if resp["arrival_slot"] <= t:
                     try:
-                        LLMResponse(**resp["response"])
-                        mp = resp["response"].to_mask()
+                        parsed = LLMResponse(**resp["response"])
+                        mp = parsed.to_mask()
                         mask = Mask(
                             bw_floor=np.array(mp["bw_floor"], dtype=float),
                             power_floor_emg=float(mp["power_floor_emg"]),

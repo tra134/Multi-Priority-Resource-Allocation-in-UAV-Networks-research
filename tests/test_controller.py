@@ -72,9 +72,10 @@ def test_end_to_end_surge():
     assert len(steps) == 400
     # budget: env guarantees sum b = sum p = 1 every step (softmax)
     assert summary["sos_violation_rate"] >= 0.0
-    assert summary["mask_active_fraction"] >= 0.0
+    assert summary["mask_active_fraction"] > 0.0, "valid MockLLM responses should install masks"
     assert summary["fallback_active_fraction"] >= 0.0
     assert summary["llm_call_rate"] >= 0.0
+    assert summary["llm_valid"] > 0
     print("end-to-end:", summary)
 
 

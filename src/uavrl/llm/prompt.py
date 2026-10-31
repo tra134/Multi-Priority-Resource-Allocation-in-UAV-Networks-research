@@ -24,7 +24,7 @@ FEW_SHOT = [
         "situation": "Emergency queue growing fast, CSI stable, U_t nominal",
         "response": {
             "operating_mode": "SOS_SURGE",
-            "min_bandwidth_ratio": {"emergency": 0.6, "important": 0.25, "normal": 0.15},
+            "min_bandwidth_ratio": {"emergency": 0.6, "important": 0.2, "normal": 0.15},
             "power_boost_emergency": True,
             "ttl_duration_slots": 300,
         },
@@ -33,7 +33,7 @@ FEW_SHOT = [
         "situation": "Deep shadow on Emergency + Important channels, queues stable",
         "response": {
             "operating_mode": "DEEP_FADING",
-            "min_bandwidth_ratio": {"emergency": 0.5, "important": 0.3, "normal": 0.2},
+            "min_bandwidth_ratio": {"emergency": 0.5, "important": 0.3, "normal": 0.15},
             "power_boost_emergency": True,
             "ttl_duration_slots": 400,
         },
@@ -42,7 +42,7 @@ FEW_SHOT = [
         "situation": "Nominal operation, all queues drained, U_t low",
         "response": {
             "operating_mode": "NORMAL",
-            "min_bandwidth_ratio": {"emergency": 0.2, "important": 0.4, "normal": 0.4},
+            "min_bandwidth_ratio": {"emergency": 0.2, "important": 0.4, "normal": 0.35},
             "power_boost_emergency": False,
             "ttl_duration_slots": 100,
         },

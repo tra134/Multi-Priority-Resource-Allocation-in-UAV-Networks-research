@@ -106,12 +106,12 @@ class MockLLM:
         # Deep fading / compound: low CSI or high shadow
         if shadow > 10.0 or csi < 0.2:
             if dQ > 0:
-                return "COMPOUND", np.array([0.7, 0.2, 0.1]), True
-            return "DEEP_FADING", np.array([0.6, 0.25, 0.15]), True
+                return "COMPOUND", np.array([0.65, 0.18, 0.12]), True
+            return "DEEP_FADING", np.array([0.6, 0.2, 0.15]), True
         # SOS surge: Emergency queue growing fast
         if dQ > 0.0 or q_emg > 5e5:
-            return "SOS_SURGE", np.array([0.6, 0.25, 0.15]), True
-        return "NORMAL", np.array([0.2, 0.4, 0.4]), False
+            return "SOS_SURGE", np.array([0.6, 0.2, 0.15]), True
+        return "NORMAL", np.array([0.2, 0.4, 0.35]), False
 
 
 def mock_response_to_text(response: dict) -> str:

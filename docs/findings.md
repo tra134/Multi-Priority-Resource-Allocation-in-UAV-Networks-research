@@ -61,3 +61,30 @@ Per-plan notes on each figure/experiment. One to two sentences per plot.
 ## Phase 0 — Tooling
 
 - `pip install -e ".[dev]" && pytest -q` passes on a clean venv. Python 3.13.5 used (plan specified 3.11, not installed; logged in docs/decision_log.md).
+
+## Phase 8 — Real LLM integration (Groq)
+
+- `configs/llm.yaml` defaults to Groq `https://api.groq.com/openai/v1` with
+  `openai/gpt-oss-120b`; the key is read from `.env` (gitignored).
+- `src/uavrl/llm/client.py` `RealLLMClient`: OpenAI SDK, JSON mode with
+  automatic fallback, schema validation, one retry, wall-clock latency and
+  token accounting, and no exceptions escaping to the controller.
+- `src/uavrl/config.py`: dependency-free `.env` loader; environment variables
+  override `configs/llm.yaml`.
+- `scripts/llm_smoke_test.py`: 20 triggered situations (surge + deep fading),
+  reports schema-valid rate, diagnosis accuracy, latency percentiles and
+  tokens; writes `results/phase8/smoke_test.json` / `.csv`.
+- Mock smoke test (`--mock --n 6`): 100% schema-valid, 83% strict diagnosis
+  accuracy, median latency 351 ms. The successful mask path is now covered by
+  `test_controller.py`.
+- Live Groq smoke test: **blocked by the local network** — every request
+  returned `403 Access denied. Please check your network settings.` before
+  authentication (Cloudflare edge in Hong Kong). Re-run on an allowed network:
+  `python scripts/llm_smoke_test.py --n 20`.
+- Phase 8 acceptance (>= 95% schema-valid on the real model) is **pending**
+  until the live call can be made; no result is claimed here.
+- `scripts/benchmark_inference.py` (Claim E): CPU, 10 critics, 500 timed slots
+  after warm-up gives median **0.35 ms/slot** actor + ensemble inference (p95
+  0.49 ms), versus the 5 ms budget. Claim E is **supported on this laptop CPU**
+  for inference only; environment stepping and the (asynchronous) LLM call are
+  excluded. Artifact: `results/phase8/inference_benchmark.json`.

@@ -47,7 +47,7 @@ class LLMResponse(BaseModel):
     def _floors(self):
         f = self.min_bandwidth_ratio
         s = f.emergency + f.important + f.normal
-        if s > 0.95:
+        if s > 0.95 + 1e-9:
             raise ValueError("sum of bandwidth floors > 0.95")
         if f.emergency > 0.9:
             raise ValueError("emergency bandwidth floor > 0.9")
