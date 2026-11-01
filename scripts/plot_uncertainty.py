@@ -18,6 +18,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"
+    ),
+)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from uavrl.env.uav_env import UAVEnv

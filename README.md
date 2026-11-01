@@ -75,6 +75,15 @@ Key training flags:
 Run names are `sac_seed<SEED>_N<N_CRITICS>`, so Pure SAC and REDQ-SAC never
 overwrite each other.
 
+**Training troubleshooting**
+
+- `ModuleNotFoundError: No module named 'uavrl'` — the notebook puts
+  `<repo>/src` on `PYTHONPATH` and launches training with `sys.executable`.
+  Rerun the clone/install cell after a runtime restart. `scripts/train.py`
+  also adds `src` to `sys.path`, so it works even without `pip install -e .`.
+- `CalledProcessError ... returned non-zero exit status 1` — that is only the
+  wrapper; the actual Python traceback is printed immediately above it.
+
 
 
 Secrets live in `.env` (gitignored). Copy the template and fill in the key:
