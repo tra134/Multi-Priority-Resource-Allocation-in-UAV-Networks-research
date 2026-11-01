@@ -59,7 +59,7 @@ sac:
   G: 1                          # update-to-data ratio
 
 trigger:
-  tau_unc: null                 # calibrated in Phase 5 (99th percentile, in-dist)
+  tau_unc: 0.2601170632243155  # Phase 5, 99th pct of U on nominal val (sac_seed0_N10)
   theta_queue: null             # tuned in Phase 7
   debounce_m: 3
   cooldown: 50                  # slots (= 250 ms)

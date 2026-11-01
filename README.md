@@ -123,6 +123,11 @@ python scripts/llm_smoke_test.py --n 50 --write-latency-config
 
 # full controller + safety-mask path with the real model (short episode)
 python scripts/llm_controller_smoke.py
+
+# trained checkpoint + calibrated tau_unc, hybrid (uncertainty OR queue) trigger
+python scripts/llm_controller_smoke.py \
+    --ckpt results/ckpt/sac_seed0_N10/sac_seed0_N10_latest.pt \
+    --trigger-mode hybrid --scenario surge --slots 2000
 ```
 
 Results are written to `results/phase8/smoke_test.{json,csv}` and the fitted

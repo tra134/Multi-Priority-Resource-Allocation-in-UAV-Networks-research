@@ -67,11 +67,24 @@ def main():
     parser.add_argument("--config", default="configs/default.yaml")
     parser.add_argument("--llm-config", default="configs/llm.yaml")
     parser.add_argument("--ckpt", default=None, help="optional SAC checkpoint")
+    parser.add_argument(
+        "--n-critics", type=int, default=None,
+        help="override sac.N_critics; must match the checkpoint",
+    )
+    parser.add_argument(
+        "--trigger-mode", default="hybrid",
+        choices=["hybrid", "uncertainty", "queue", "periodic",
+                 "reactive", "always", "random"],
+        help="hybrid (default) = uncertainty OR queue threshold",
+    )
+    parser.add_argument("--tau-unc", type=float, default=None,
+                        help="default: trigger.tau_unc in the config")
     parser.add_argument("--scenario", default="surge", choices=["surge", "shadow", "nominal"])
     parser.add_argument("--slots", type=int, default=300)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--theta-queue", type=float, default=50000.0)
-    parser.add_argument("--cooldown", type=int, default=80)
+    parser.add_argument("--theta-queue", type=float, default=None,
+                        help="default: trigger.theta_queue, else 50000 bits")
+    parser.add_argument("--cooldown", type=int, default=None)
     parser.add_argument("--timeout-ms", type=int, default=5000)
     parser.add_argument("--model", default=None)
     parser.add_argument("--mock", action="store_true")
@@ -112,23 +125,42 @@ def main():
         )
 
     sac_cfg = cfg.get("sac", {})
+    n_critics = int(
+        args.n_critics
+        if args.n_critics is not None
+        else sac_cfg.get("N_critics", 10)
+    )
     agent = SACAgent(
         obs_dim=17, act_dim=6, device="cpu", seed=args.seed,
-        N_critics=int(sac_cfg.get("N_critics", 10)),
+        N_critics=n_critics,
         hidden=int((sac_cfg.get("hidden") or [256])[0]),
         rng=np.random.default_rng(args.seed),
     )
     if args.ckpt and os.path.exists(args.ckpt):
         agent.load(args.ckpt)
         print(f"loaded checkpoint {args.ckpt}")
+    elif args.ckpt:
+        raise FileNotFoundError(args.ckpt)
+
+    trigger_cfg = cfg.get("trigger", {})
+    tau_unc = (args.tau_unc if args.tau_unc is not None
+               else trigger_cfg.get("tau_unc"))
+    theta_queue = (args.theta_queue if args.theta_queue is not None
+                   else trigger_cfg.get("theta_queue"))
+    if theta_queue is None:
+        theta_queue = 50000.0
+    cooldown = (args.cooldown if args.cooldown is not None
+                else int(trigger_cfg.get("cooldown", 80)))
 
     env = UAVEnv(config=cfg, scenario=make_scenario(args.scenario, args.seed),
                  seed=args.seed)
     ctrl = HybridController(
         agent, env, client, cfg,
-        trigger_mode="queue", tau_unc=None, theta_queue=args.theta_queue,
-        debounce_m=2, cooldown=args.cooldown,
-        ttl_slots=int(cfg.get("trigger", {}).get("ttl_slots", 600)),
+        trigger_mode=args.trigger_mode, tau_unc=tau_unc,
+        theta_queue=theta_queue,
+        debounce_m=int(trigger_cfg.get("debounce_m", 3)),
+        cooldown=cooldown,
+        ttl_slots=int(trigger_cfg.get("ttl_slots", 600)),
         timeout_ms=args.timeout_ms,
         fallback_slots=int(cfg.get("fallback", {}).get("fallback_slots", 200)),
         rng=np.random.default_rng(args.seed),
@@ -145,6 +177,10 @@ def main():
         "scenario": args.scenario,
         "slots": args.slots,
         "seed": args.seed,
+        "trigger_mode": args.trigger_mode,
+        "tau_unc": tau_unc,
+        "theta_queue": theta_queue,
+        "n_critics": n_critics,
         "wall_seconds": wall_s,
         "summary": summary,
         "client_stats": getattr(client, "stats", lambda: {})(),
@@ -159,6 +195,8 @@ def main():
     print("=== controller + LLM smoke test ===")
     print(f"model              : {model}")
     print(f"scenario / slots   : {args.scenario} / {args.slots}")
+    print(f"trigger            : {args.trigger_mode} (tau_unc={tau_unc}, "
+          f"theta_queue={theta_queue})")
     print(f"LLM calls          : {summary['llm_calls']}")
     print(f"valid / invalid    : {summary['llm_valid']} / {summary['llm_invalid']}")
     print(f"timeouts           : {summary['llm_timeouts']}")
