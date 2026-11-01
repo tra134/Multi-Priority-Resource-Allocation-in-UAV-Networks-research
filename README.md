@@ -21,7 +21,7 @@ source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -U pip
 pip install -e ".[dev]"
 
-# 2. Run the test suite (63 tests)
+# 2. Run the test suite (64 tests)
 pytest -q
 
 # 3. Phase 1: channel & traffic plots
@@ -30,15 +30,52 @@ python scripts/plot_channel.py
 # 4. Phase 2: baseline comparison
 python scripts/run_baselines.py
 
-# 5. Phase 3: train Pure SAC
-python scripts/train.py --config configs/default.yaml --agent sac --seed 0 --steps 300000
+# 5. Phase 3: train Pure SAC (N_critics=2)
+python scripts/train.py --config configs/default.yaml --agent sac --n-critics 2 \
+    --seed 0 --steps 300000
+
+# Phase 4: REDQ-SAC (N_critics=10)
+python scripts/train.py --config configs/default.yaml --agent sac --n-critics 10 \
+    --seed 0 --steps 300000
+
+# Resume after the latest checkpoint (model, optimizers and step are restored;
+# the replay buffer is rebuilt)
+python scripts/train.py --agent sac --n-critics 10 --steps 300000 --resume
 
 # 6. Phase 8: real-LLM smoke test (Groq) + Claim E inference benchmark
 python scripts/llm_smoke_test.py --n 20
 python scripts/benchmark_inference.py
 ```
 
-## LLM access (Phase 8)
+## Colab training
+
+`notebooks/colab_train.ipynb` trains either agent on a Colab GPU and keeps
+checkpoints on Google Drive:
+
+1. Open the notebook in Colab and choose `Runtime -> Change runtime type -> T4 GPU`.
+2. For a private clone, add a Colab secret named `GITHUB_TOKEN`.
+3. In the configuration cell set `N_CRITICS` (`2` = Pure SAC, `10` = REDQ-SAC),
+   `SEED` and `STEPS`; then run all cells.
+
+The notebook clones over HTTPS (the token is removed from `.git/config`
+afterwards), installs the package, trains with `--resume`, verifies the
+checkpoint format, and copies TensorBoard logs/results to Drive. Model,
+optimizer, entropy and step state survive a disconnect; the replay buffer does
+not and is rebuilt on resume.
+
+Key training flags:
+
+| Flag | Meaning |
+|------|---------|
+| `--n-critics N` | `2` = twin-critic SAC, `10` = REDQ-SAC (overrides `sac.N_critics`) |
+| `--ckpt-every K` | checkpoint interval; use `5000` on flaky Colab sessions |
+| `--resume` | continue from `<ckpt-dir>/<run>_latest.pt` |
+| `--eval-every K` | evaluation interval in environment steps |
+
+Run names are `sac_seed<SEED>_N<N_CRITICS>`, so Pure SAC and REDQ-SAC never
+overwrite each other.
+
+
 
 Secrets live in `.env` (gitignored). Copy the template and fill in the key:
 

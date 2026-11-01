@@ -9,10 +9,9 @@
 from __future__ import annotations
 
 import numpy as np
-import torch
 
-from uavrl.agents.sac import SACAgent
 from uavrl.agents.replay import ReplayBuffer
+from uavrl.agents.sac import SACAgent
 
 
 def make_agent(N_critics=10, seed=0):
@@ -79,3 +78,35 @@ def test_save_load(tmp_path):
     a1 = agent.select_action(obs, deterministic=True)
     a2 = agent2.select_action(obs, deterministic=True)
     assert np.allclose(a1, a2)
+
+
+def test_checkpoint_is_resumable(tmp_path):
+    """Optimizer state and the training step survive a save/load round-trip."""
+    agent = make_agent(N_critics=5, seed=8)
+    buf = ReplayBuffer(17, 6, size=1000, rng=np.random.default_rng(9))
+    rng = np.random.default_rng(10)
+    for _ in range(320):
+        obs = rng.normal(size=17).astype(np.float32)
+        act = rng.uniform(-1, 1, 6).astype(np.float32)
+        buf.store(obs, act, float(rng.normal()), rng.normal(size=17).astype(np.float32), 0.0)
+    agent.update(buf, batch_size=64)
+    agent.total_it = 1
+
+    path = tmp_path / "resume.pt"
+    agent.save(str(path), step=1234)
+
+    fresh = make_agent(N_critics=5, seed=11)
+    payload = fresh.load(str(path), device="cpu")
+
+    assert payload["step"] == 1234
+    assert fresh.total_it == agent.total_it
+    # Optimizer state is restored (Adam has exp_avg for the actor).
+    assert fresh.actor_optimizer.state_dict()["state"]
+    assert fresh.critic_optimizer.state_dict()["state"]
+    assert fresh.alpha_optimizer.state_dict()["state"]
+
+    obs = np.zeros(17, dtype=np.float32)
+    assert np.allclose(
+        agent.select_action(obs, deterministic=True),
+        fresh.select_action(obs, deterministic=True),
+    )

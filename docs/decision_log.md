@@ -48,3 +48,15 @@ Format: date, what, why. (Rule 9 of plan.md Section 0.)
 | 2026-10-31 | Fixed MockLLM and prompt few-shot floors to sum to <= 0.95; fixed controller validation calling `.to_mask()` on a dict | Both bugs made every "valid" LLM response fall through to fallback, so the successful mask path had never been exercised. Regression tests added |
 | 2026-10-31 | Smoke test defaults to 20 synthetic triggered situations (10 surge, 10 deep fading) | Cheap Phase 8 check without a trained checkpoint; uses the same prompt builder and schema as the controller |
 | 2026-10-31 | ~~Groq live calls return 403 from this machine (Cloudflare, HKG edge)~~ | Resolved on 2026-11-01 after changing networks; see the live smoke-test row above |
+
+## Phase 3/4 training decisions (Colab-ready)
+
+| Date | Decision | Why |
+|------|----------|-----|
+| 2026-11-01 | Added `--n-critics` to `scripts/train.py` | One config can train both phases (2 = Pure SAC, 10 = REDQ-SAC) without hand-editing `configs/default.yaml` between runs |
+| 2026-11-01 | Checkpoints now store optimizer state, entropy optimizer and the step counter; `load()` returns the payload | Real resume after a Colab disconnect. Previously only weights and `total_it` were saved, so Adam moments and the training position were lost |
+| 2026-11-01 | Checkpoint filenames include `N_critics` (`sac_seed<seed>_N<n>`) | Pure SAC and REDQ-SAC runs for the same seed must not overwrite each other |
+| 2026-11-01 | `--ckpt-every` overrides `training.ckpt_every` | Colab sessions can be pre-empted; a 5000-step interval bounds lost work without touching the default config |
+| 2026-11-01 | Notebook clones over HTTPS with an optional `GITHUB_TOKEN` Colab secret, then resets `origin` to the token-free URL | Colab has no SSH key setup by default; resetting the remote avoids persisting the token in `.git/config` |
+| 2026-11-01 | TensorBoard logs stay local and are copied to Drive at the end | Avoids per-scalar Drive I/O during training; checkpoints still write to Drive so they survive a disconnect |
+| 2026-11-01 | Resume rebuilds the replay buffer | Buffer snapshots would add ~1 GB per checkpoint. Documented in the notebook and README; the first post-resume updates wait until one batch is collected |

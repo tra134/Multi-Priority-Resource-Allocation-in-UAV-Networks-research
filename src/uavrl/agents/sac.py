@@ -145,7 +145,7 @@ class SACAgent:
             # ---- Soft target update ----
             with torch.no_grad():
                 for param, target_param in zip(
-                    self.critic.parameters(), self.critic_target.parameters()
+                    self.critic.parameters(), self.critic_target.parameters(), strict=False
                 ):
                     target_param.data.copy_(
                         self.tau * param.data + (1.0 - self.tau) * target_param.data
@@ -167,31 +167,46 @@ class SACAgent:
         return self.alpha
 
     # ------------------------------------------------------------------ save / load
-    def save(self, path):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+    def save(self, path, step=None):
+        """Save actor/critics + optimizer state for resumable training."""
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         payload = {
             "actor": self.actor.state_dict(),
             "critic": self.critic.state_dict(),
             "critic_target": self.critic_target.state_dict(),
+            "actor_optimizer": self.actor_optimizer.state_dict(),
+            "critic_optimizer": self.critic_optimizer.state_dict(),
             "total_it": self.total_it,
+            "step": step,
         }
         if self.automatic_entropy_tuning:
             payload["log_alpha"] = self.log_alpha.detach().clone()
+            payload["alpha_optimizer"] = self.alpha_optimizer.state_dict()
         else:
             payload["alpha"] = self.alpha.detach().clone()
         torch.save(payload, path)
 
     def load(self, path, device="cpu"):
+        """Load a checkpoint and return it (callers can read ``step``)."""
         checkpoint = torch.load(path, map_location=device, weights_only=False)
         self.actor.load_state_dict(checkpoint["actor"])
         self.critic.load_state_dict(checkpoint["critic"])
         self.critic_target.load_state_dict(checkpoint["critic_target"])
+        # Optimizer state is optional for backwards compatibility with the
+        # Phase 3/4 checkpoints saved before resumable training was added.
+        if "actor_optimizer" in checkpoint:
+            self.actor_optimizer.load_state_dict(checkpoint["actor_optimizer"])
+        if "critic_optimizer" in checkpoint:
+            self.critic_optimizer.load_state_dict(checkpoint["critic_optimizer"])
         if self.automatic_entropy_tuning:
             self.log_alpha.data.copy_(checkpoint["log_alpha"])
             self.alpha = self.log_alpha.exp()
+            if "alpha_optimizer" in checkpoint:
+                self.alpha_optimizer.load_state_dict(checkpoint["alpha_optimizer"])
         else:
             self.alpha = checkpoint["alpha"].to(device)
         self.total_it = checkpoint.get("total_it", 0)
+        return checkpoint
 
     def uncertainty(self, obs, action):
         """Ensemble std of Q(s,a) across critics -> epistemic uncertainty U_t."""
