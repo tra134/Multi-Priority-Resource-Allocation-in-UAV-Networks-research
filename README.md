@@ -21,7 +21,7 @@ source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -U pip
 pip install -e ".[dev]"
 
-# 2. Run the test suite (64 tests)
+# 2. Run the test suite (66 tests)
 pytest -q
 
 # 3. Phase 1: channel & traffic plots
