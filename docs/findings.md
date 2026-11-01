@@ -64,25 +64,36 @@ Per-plan notes on each figure/experiment. One to two sentences per plot.
 
 ## Phase 8 — Real LLM integration (Groq)
 
-- `configs/llm.yaml` defaults to Groq `https://api.groq.com/openai/v1` with
-  `openai/gpt-oss-120b`; the key is read from `.env` (gitignored).
+- Provider: Groq OpenAI-compatible endpoint, default model **`qwen/qwen3.8-27b`**
+  (50 live calls, 2026-11-01). The key is read from `.env` (gitignored).
 - `src/uavrl/llm/client.py` `RealLLMClient`: OpenAI SDK, JSON mode with
-  automatic fallback, schema validation, one retry, wall-clock latency and
-  token accounting, and no exceptions escaping to the controller.
+  automatic fallback, schema validation, retry with rate-limit backoff,
+  `reasoning_effort=low` for GPT-OSS, wall-clock latency + token accounting,
+  and no exceptions escaping to the controller.
 - `src/uavrl/config.py`: dependency-free `.env` loader; environment variables
   override `configs/llm.yaml`.
-- `scripts/llm_smoke_test.py`: 20 triggered situations (surge + deep fading),
+- `scripts/llm_smoke_test.py`: 20/50 triggered situations (surge + deep fading),
   reports schema-valid rate, diagnosis accuracy, latency percentiles and
   tokens; writes `results/phase8/smoke_test.json` / `.csv`.
+- **Live smoke test (n=50, cache disabled): 100% schema-valid** (Phase 8 target
+  >=95%), **92% strict diagnosis accuracy**, **1159 ms median latency**
+  (p5 508 ms, p95 3773 ms), 42,156 prompt + 4,024 completion tokens. Artifacts:
+  `results/phase8/smoke_test.json`, `configs/llm_latency.yaml`.
+- The fitted lognormal is `mu_log=7.055`, `sigma_log=0.705`. `configs/default.yaml`
+  now uses these measured values, `llm_timeout_ms=5000`, and a degraded-API
+  scenario median of 4000 ms (S3). This replaces the plan's assumed 350 ms.
+- Groq's free tier enforces 8000 tokens/minute. The smoke script paces calls
+  (`--tpm-limit 7000`) and the client retries HTTP 429 using `Retry-After`;
+  prompt features are rounded to 2 significant figures so the cache absorbs
+  repeated situations.
 - Mock smoke test (`--mock --n 6`): 100% schema-valid, 83% strict diagnosis
-  accuracy, median latency 351 ms. The successful mask path is now covered by
+  accuracy, median latency 351 ms. The successful mask path is covered by
   `test_controller.py`.
-- Live Groq smoke test: **blocked by the local network** — every request
-  returned `403 Access denied. Please check your network settings.` before
-  authentication (Cloudflare edge in Hong Kong). Re-run on an allowed network:
-  `python scripts/llm_smoke_test.py --n 20`.
-- Phase 8 acceptance (>= 95% schema-valid on the real model) is **pending**
-  until the live call can be made; no result is claimed here.
+- End-to-end controller smoke test (`scripts/llm_controller_smoke.py`, 600-slot
+  surge episode, real Qwen): 3 LLM calls, 3 valid masks installed, 0 invalid,
+  0 timeouts, mask active 70% of slots. This confirms the real response path
+  reaches the safety layer, not just the parser. Artifact:
+  `results/phase8/controller_smoke.json`.
 - `scripts/benchmark_inference.py` (Claim E): CPU, 10 critics, 500 timed slots
   after warm-up gives median **0.35 ms/slot** actor + ensemble inference (p95
   0.49 ms), versus the 5 ms budget. Claim E is **supported on this laptop CPU**

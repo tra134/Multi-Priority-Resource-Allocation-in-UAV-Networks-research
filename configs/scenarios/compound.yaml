@@ -14,5 +14,5 @@ disturbance:
   shadow_db: 15.0
   duration_slots: 400
   start_slot: [500, 1200]
-  latency_median_ms: 2000   # S3: LLM API degradation
+  latency_median_ms: 4000   # S3: LLM API degradation (~3.5x measured nominal)
 ood: true

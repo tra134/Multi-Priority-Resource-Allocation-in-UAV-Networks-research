@@ -1,0 +1,12 @@
+llm_latency:
+  n: 50
+  mu_log: 7.055012469374417
+  sigma_log: 0.7054635078217337
+  median_ms: 1158.6519188540515
+  mean_ms: 1538.1993938198866
+  p5_ms: 508.3771195504596
+  p95_ms: 3772.7672445491403
+  model: qwen/qwen3.8-27b
+  measured_at: 2026-11-01
+  source: results/phase8/smoke_test.json
+  note: 50 live calls, cache disabled; wall-clock latency from the openai SDK

@@ -83,7 +83,8 @@ class RealLLMClient(LLMClient):
     def __init__(self, model=None, base_url=None, api_key=None,
                  temperature=0.0, max_tokens=200, retry_max=1, cache=None,
                  timeout_s=30.0, json_mode=True, client=None,
-                 load_dotenv=True):
+                 load_dotenv=True, reasoning_effort=None,
+                 rate_limit_retries=3, rate_limit_max_sleep_s=30.0):
         if load_dotenv:
             from ..config import load_env
             load_env()
@@ -96,12 +97,16 @@ class RealLLMClient(LLMClient):
         self.cache = cache
         self.timeout_s = float(timeout_s)
         self.json_mode = bool(json_mode)
+        self.reasoning_effort = reasoning_effort or None
+        self.rate_limit_retries = int(rate_limit_retries)
+        self.rate_limit_max_sleep_s = float(rate_limit_max_sleep_s)
         self._client = client
 
         self.calls = 0
         self.successes = 0
         self.failures = 0
         self.cache_hits = 0
+        self.rate_limit_waits = 0
         self.total_prompt_tokens = 0
         self.total_completion_tokens = 0
         self.last_usage: dict = {}
@@ -134,6 +139,7 @@ class RealLLMClient(LLMClient):
     # ------------------------------------------------------------------ call
     def call(self, prompt: str, features: Optional[dict] = None):
         self.calls += 1
+        self.last_usage = {}
         if self.cache is not None:
             cached = self.cache.get(self.model, prompt)
             if cached is not None:
@@ -154,7 +160,11 @@ class RealLLMClient(LLMClient):
         last_reason = "unknown"
         last_latency = 0.0
         attempts = max(1, self.retry_max + 1)
-        for attempt in range(attempts):
+        attempt = 0
+        rate_limit_waits = 0
+
+        while attempt < attempts:
+            attempt += 1
             payload = {
                 "model": self.model,
                 "messages": messages,
@@ -163,6 +173,10 @@ class RealLLMClient(LLMClient):
             }
             if self.json_mode:
                 payload["response_format"] = {"type": "json_object"}
+            # Groq's GPT-OSS models accept reasoning_effort; other models
+            # (e.g. Qwen) can emit non-JSON text when it is sent.
+            if self.reasoning_effort and "gpt-oss" in (self.model or "").lower():
+                payload["extra_body"] = {"reasoning_effort": self.reasoning_effort}
 
             t0 = time.perf_counter()
             try:
@@ -172,11 +186,29 @@ class RealLLMClient(LLMClient):
                 last_latency = (time.perf_counter() - t0) * 1000.0
                 last_reason = f"request_error:{type(exc).__name__}:{exc}"
                 self.last_error = last_reason
+
+                # Rate limits are retried with the provider's suggested delay.
+                if _is_rate_limit_error(exc) and rate_limit_waits < self.rate_limit_retries:
+                    sleep_s = min(
+                        _retry_after_seconds(exc),
+                        self.rate_limit_max_sleep_s,
+                    )
+                    self.rate_limit_waits += 1
+                    time.sleep(max(0.0, sleep_s))
+                    attempt -= 1  # rate-limit waits do not consume retry_max
+                    continue
+
                 # Some OpenAI-compatible servers do not implement json_object.
                 if self.json_mode and _is_response_format_error(exc):
                     self.json_mode = False
+                    attempt -= 1
                     continue
-                if attempt + 1 < attempts:
+                # Groq-specific reasoning_effort may not exist everywhere.
+                if self.reasoning_effort and _is_reasoning_effort_error(exc):
+                    self.reasoning_effort = None
+                    attempt -= 1
+                    continue
+                if attempt < attempts:
                     continue
                 self.failures += 1
                 return None, last_latency, False, last_reason
@@ -190,7 +222,7 @@ class RealLLMClient(LLMClient):
             except (AttributeError, IndexError, TypeError) as exc:
                 last_reason = f"bad_response:{type(exc).__name__}"
                 self.last_error = last_reason
-                if attempt + 1 < attempts:
+                if attempt < attempts:
                     continue
                 self.failures += 1
                 return None, latency_ms, False, last_reason
@@ -202,7 +234,7 @@ class RealLLMClient(LLMClient):
                     LLMInvalid) as exc:
                 last_reason = f"invalid_json_or_schema:{type(exc).__name__}"
                 self.last_error = last_reason
-                if attempt + 1 < attempts:
+                if attempt < attempts:
                     # Add the parser error to the retry prompt.
                     messages = messages + [
                         {"role": "assistant", "content": text or ""},
@@ -250,6 +282,7 @@ class RealLLMClient(LLMClient):
             "successes": self.successes,
             "failures": self.failures,
             "cache_hits": self.cache_hits,
+            "rate_limit_waits": self.rate_limit_waits,
             "prompt_tokens": self.total_prompt_tokens,
             "completion_tokens": self.total_completion_tokens,
             "last_error": self.last_error,
@@ -259,6 +292,35 @@ class RealLLMClient(LLMClient):
 def _is_response_format_error(exc: Exception) -> bool:
     text = str(exc).lower()
     return "response_format" in text or "json_object" in text or "json mode" in text
+
+
+def _is_reasoning_effort_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return "reasoning_effort" in text or "reasoning effort" in text
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    if getattr(exc, "status_code", None) == 429:
+        return True
+    text = str(exc).lower()
+    return "ratelimit" in type(exc).__name__.lower() or "rate limit" in text
+
+
+def _retry_after_seconds(exc: Exception) -> float:
+    """Extract a wait time from Retry-After or Groq's error message."""
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if headers is not None:
+        value = headers.get("retry-after") or headers.get("Retry-After")
+        if value:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                pass
+    match = re.search(r"try again in (\d+(?:\.\d+)?)\s*s", str(exc), re.IGNORECASE)
+    if match:
+        return float(match.group(1))
+    return 5.0
 
 
 def build_llm_client(config_path=None, use_mock=False, cache=None, mock_kwargs=None):
@@ -288,5 +350,8 @@ def build_llm_client(config_path=None, use_mock=False, cache=None, mock_kwargs=N
         retry_max=cfg.get("retry_max", 1),
         timeout_s=cfg.get("timeout_s", 30.0),
         json_mode=cfg.get("response_format_json", True),
+        reasoning_effort=cfg.get("reasoning_effort"),
+        rate_limit_retries=cfg.get("rate_limit_retries", 3),
+        rate_limit_max_sleep_s=cfg.get("rate_limit_max_sleep_s", 30.0),
         cache=cache,
     )

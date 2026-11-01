@@ -5,11 +5,14 @@ timing:
   slot_ms: 5
   episode_slots: 2000
   D_th: 15.0                    # Emergency delay threshold [ms] (= 3 slots)
-  llm_latency_median_ms: 350    # nominal LLM latency (lognormal)
-  llm_latency_p5_ms: 200
-  llm_latency_p95_ms: 800
-  llm_timeout_ms: 1000
-  stress_latency_median_ms: 2000  # Scenario S3
+  # Measured on Groq qwen/qwen3.8-27b, 50 live calls, 2026-11-01
+  # (scripts/llm_smoke_test.py --n 50 --no-cache --write-latency-config)
+  llm_latency_median_ms: 1159
+  llm_latency_p5_ms: 508
+  llm_latency_p95_ms: 3773
+  llm_latency_sigma: 0.705       # lognormal sigma from the fitted distribution
+  llm_timeout_ms: 5000           # above nominal p95; only tail timeouts fall back
+  stress_latency_median_ms: 4000  # Scenario S3: degraded API (~3.5x nominal)
 
 channel:
   a: 9.61                       # Al-Hourani urban A2G parameters

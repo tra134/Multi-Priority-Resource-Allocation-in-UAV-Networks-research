@@ -55,9 +55,11 @@ def make_features(scenario: str, i: int, rng: np.random.Generator) -> dict:
         csi = float(rng.uniform(0.3, 0.8))
         shadow = 0.0
     elif scenario == "shadow":
-        q_emg = float(rng.uniform(2e5, 1.2e6))
-        dq = float(rng.uniform(-1.0e5, 0.5e5))
-        csi = float(rng.uniform(0.01, 0.08))
+        # Pure deep fading: queues are not growing (dQ_emg < 0), all classes
+        # are deeply faded.  A growing queue under fading would be COMPOUND.
+        q_emg = float(rng.uniform(1e5, 7e5))
+        dq = float(rng.uniform(-2.0e5, -0.2e5))
+        csi = float(rng.uniform(0.005, 0.05))
         shadow = float(rng.uniform(15.0, 22.0))
     else:  # nominal (not scored)
         q_emg = float(rng.uniform(1e3, 5e4))
@@ -72,10 +74,16 @@ def make_features(scenario: str, i: int, rng: np.random.Generator) -> dict:
         "csi_emergency_mean": csi,
         "csi_emergency_var": float(rng.uniform(1e-4, 1e-2)),
         "csi_emergency_slope": float(rng.uniform(-0.02, 0.02)),
-        "csi_important_mean": float(rng.uniform(0.4, 1.2)),
+        "csi_important_mean": (
+            float(rng.uniform(0.01, 0.08)) if scenario == "shadow"
+            else float(rng.uniform(0.4, 1.2))
+        ),
         "csi_important_var": float(rng.uniform(1e-4, 1e-2)),
         "csi_important_slope": float(rng.uniform(-0.02, 0.02)),
-        "csi_normal_mean": float(rng.uniform(0.5, 1.5)),
+        "csi_normal_mean": (
+            float(rng.uniform(0.02, 0.15)) if scenario == "shadow"
+            else float(rng.uniform(0.5, 1.5))
+        ),
         "csi_normal_var": float(rng.uniform(1e-4, 1e-2)),
         "csi_normal_slope": float(rng.uniform(-0.02, 0.02)),
         "queue_emg_bits": q_emg,
@@ -115,6 +123,13 @@ def main():
     parser.add_argument("--no-cache", action="store_true")
     parser.add_argument("--write-latency-config", action="store_true")
     parser.add_argument("--min-valid", type=float, default=0.95)
+    parser.add_argument("--model", default=None, help="override LLM model for this run")
+    parser.add_argument(
+        "--tpm-limit", type=float, default=7000.0,
+        help="client-side tokens/minute pacing target (free Groq tier is 8000)",
+    )
+    parser.add_argument("--no-throttle", action="store_true",
+                        help="disable client-side tokens/minute pacing")
     args = parser.parse_args()
 
     load_env()
@@ -135,18 +150,21 @@ def main():
             print("ERROR: no LLM_API_KEY. Put it in .env or export it.")
             print("Copy .env.example to .env, then fill in your Groq key.")
             return 1
+        model_name = args.model or cfg.get("model")
         client = RealLLMClient(
-            model=cfg.get("model"),
+            model=model_name,
             base_url=cfg.get("base_url"),
             api_key=cfg.get("api_key"),
             temperature=cfg.get("temperature", 0.0),
-            max_tokens=cfg.get("max_tokens", 200),
+            max_tokens=cfg.get("max_tokens", 512),
             retry_max=cfg.get("retry_max", 1),
             timeout_s=cfg.get("timeout_s", 30.0),
             json_mode=cfg.get("response_format_json", True),
+            reasoning_effort=cfg.get("reasoning_effort"),
+            rate_limit_retries=cfg.get("rate_limit_retries", 3),
+            rate_limit_max_sleep_s=cfg.get("rate_limit_max_sleep_s", 30.0),
             cache=cache,
         )
-        model_name = cfg.get("model")
         print(f"provider={cfg.get('provider', 'openai-compatible')} model={model_name}")
 
     rng = np.random.default_rng(args.seed)
@@ -161,9 +179,9 @@ def main():
         prompt = build_prompt(features)
         t0 = time.perf_counter()
         response, latency_ms, ok, reason = client.call(prompt, features)
-        wall_ms = (time.perf_counter() - t0) * 1000.0
-        if latency_ms <= 0.0:
-            latency_ms = wall_ms
+        cache_hit = reason == "cache"
+        if cache_hit:
+            latency_ms = 0.0
 
         mode = response.get("operating_mode") if isinstance(response, dict) else None
         correct = bool(mode in EXPECTED[scenario]) if mode else False
@@ -174,19 +192,29 @@ def main():
             "reason": reason,
             "mode": mode,
             "diagnosis_correct": correct,
+            "cache_hit": bool(cache_hit),
             "latency_ms": float(latency_ms),
             "prompt_tokens": int(getattr(client, "last_usage", {}).get("prompt_tokens", 0)),
             "completion_tokens": int(getattr(client, "last_usage", {}).get("completion_tokens", 0)),
         })
-        if ok:
+        if ok and not cache_hit:
             latencies.append(latency_ms)
         print(
             f"[{i+1:3d}/{args.n}] {scenario:6s} ok={ok!s:5s} mode={str(mode):10s} "
             f"correct={correct!s:5s} latency={latency_ms:7.1f}ms reason={reason}"
         )
+        if not args.no_throttle and not args.mock:
+            used = int(getattr(client, "last_usage", {}).get("total_tokens", 0))
+            if used > 0:
+                target_s = used / max(args.tpm_limit, 1.0) * 60.0
+                elapsed_s = time.perf_counter() - t0
+                if target_s > elapsed_s:
+                    time.sleep(target_s - elapsed_s)
 
     n = len(rows)
     n_ok = sum(r["ok"] for r in rows)
+    n_live = sum(r["ok"] and not r["cache_hit"] for r in rows)
+    n_cache = sum(r["cache_hit"] for r in rows)
     n_correct = sum(r["diagnosis_correct"] for r in rows)
     valid_rate = n_ok / max(n, 1)
     diag_acc = n_correct / max(n, 1)
@@ -200,6 +228,8 @@ def main():
         "model": model_name,
         "n": n,
         "valid_rate": valid_rate,
+        "live_calls": n_live,
+        "cache_hits": n_cache,
         "diagnosis_accuracy": diag_acc,
         "latency": lat,
         "wall_seconds": time.time() - t_start,

@@ -5,11 +5,10 @@ UAV Multi-Priority Resource Allocation with **SAC + Ensemble Critic + Async LLM 
 Reproducible simulation study testing the claims in the PBL3 mid-term report.
 See `plan.md` for the full implementation plan (Phases 0-10).
 
-**Status:** Phases 0-7 implemented and tested. Phase 8 (real LLM integration) is
-implemented; the Groq key is configured locally in `.env`. The current machine
-is blocked by Groq/Cloudflare from this region (`403 Access denied`), so the
-live smoke test must be run from an allowed network (VPN/another country) or
-with Ollama / another OpenAI-compatible provider.
+**Status:** Phases 0-8 implemented and tested. The live Groq smoke test passed
+on 2026-11-01: **100% schema-valid**, 92% strict diagnosis accuracy, 50 calls,
+median latency 1159 ms. Prompt `v2-final` is frozen. Next: train checkpoints
+(Phase 3/4), calibrate `tau_unc`, then run the Phase 9 grid.
 
 ## Quick start (copy-paste)
 
@@ -22,7 +21,7 @@ source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -U pip
 pip install -e ".[dev]"
 
-# 2. Run the test suite (58 tests)
+# 2. Run the test suite (63 tests)
 pytest -q
 
 # 3. Phase 1: channel & traffic plots
@@ -51,16 +50,18 @@ cp .env.example .env
 ```dotenv
 LLM_BASE_URL=https://api.groq.com/openai/v1
 LLM_API_KEY=gsk_...
-LLM_MODEL=openai/gpt-oss-120b
+LLM_MODEL=qwen/qwen3.8-27b
 ```
 
 `configs/llm.yaml` contains the non-secret defaults (provider, model,
 temperature, retry count, cache). Environment variables override the YAML, so
 the same code works locally, on Colab, and in tests.
 
-Groq deprecated `llama-3.3-70b-versatile` on 2026-08-16; the default is now
-`openai/gpt-oss-120b` (the smaller/faster alternative is
-`qwen/qwen3.6-27b`).
+The default is `qwen/qwen3.8-27b`: it is non-reasoning, uses fewer output
+tokens, and scored best on the smoke test. `openai/gpt-oss-120b` is also
+tested and still works (`--model openai/gpt-oss-120b`, with
+`reasoning_effort: low`). Groq retired the old Llama 3.x models on
+2026-08-16.
 
 ### Smoke test
 
@@ -73,17 +74,26 @@ python scripts/llm_smoke_test.py --n 20 --mock
 
 # also fit a lognormal latency model for the simulator
 python scripts/llm_smoke_test.py --n 50 --write-latency-config
+
+# full controller + safety-mask path with the real model (short episode)
+python scripts/llm_controller_smoke.py
 ```
 
-Results are written to `results/phase8/smoke_test.{json,csv}`. The script exits
-non-zero if fewer than 95% of responses are schema-valid (plan.md Phase 8
-acceptance criterion).
+Results are written to `results/phase8/smoke_test.{json,csv}` and the fitted
+latency model to `configs/llm_latency.yaml`. The script exits non-zero if fewer
+than 95% of responses are schema-valid (plan.md Phase 8 acceptance criterion).
+
+The Groq free tier allows 8000 tokens/minute. The script paces calls with
+`--tpm-limit 7000` and the client retries HTTP 429 using `Retry-After`;
+`--no-throttle` is available for paid tiers. Numeric prompt features are
+rounded to 2 significant figures so repeated situations hit the disk cache.
 
 ### Troubleshooting
 
 - **403 `Access denied. Please check your network settings.`** — Groq blocks
-  API access from some regions (this machine currently resolves through Hong
-  Kong). The key is fine; run from an allowed network or switch provider.
+  API access from some regions. Change network/VPN or switch provider.
+- **429 rate limit** — the free tier is 8000 tokens/minute. Keep the default
+  pacing, use the cache, or upgrade to a paid tier.
 - **Use Ollama instead (offline):** `ollama pull qwen2.5:3b`, then set
   `LLM_BASE_URL=http://localhost:11434/v1`, `LLM_API_KEY=ollama`,
   `LLM_MODEL=qwen2.5:3b`.

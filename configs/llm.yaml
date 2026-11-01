@@ -5,11 +5,13 @@
 #
 #   LLM_BASE_URL=https://api.groq.com/openai/v1
 #   LLM_API_KEY=gsk_...
-#   LLM_MODEL=openai/gpt-oss-120b
+#   LLM_MODEL=qwen/qwen3.8-27b
 #
 # Environment variables override the values below.  See .env.example.
-# Groq deprecated llama-3.3-70b-versatile on 2026-08-16; gpt-oss-120b is the
-# recommended replacement, with qwen/qwen3.6-27b as a smaller/faster option.
+# Groq deprecated llama-3.3-70b-versatile on 2026-08-16.  Tested options on
+# Groq (2026-11): qwen/qwen3.8-27b (default: no reasoning tokens, ~1.1 s
+# median, 100% valid on the Phase 8 smoke test) and openai/gpt-oss-120b
+# (reasoning model; use reasoning_effort: low).
 # max_tokens is 512 (not 200) to leave room for GPT-OSS reasoning tokens
 # before the JSON object; the JSON itself is ~70 tokens.
 
@@ -17,11 +19,14 @@ llm:
   provider: groq
   base_url: https://api.groq.com/openai/v1
   api_key: null          # from env LLM_API_KEY (or .env)
-  model: openai/gpt-oss-120b   # from env LLM_MODEL
+  model: qwen/qwen3.8-27b      # from env LLM_MODEL
   temperature: 0.0
   max_tokens: 512
   response_format_json: true   # falls back automatically if unsupported
+  reasoning_effort: low        # only sent for GPT-OSS models; ignored for Qwen
   retry_max: 1
+  rate_limit_retries: 3        # extra retries for HTTP 429, uses Retry-After
+  rate_limit_max_sleep_s: 30
   timeout_s: 30
 
 prompt:
