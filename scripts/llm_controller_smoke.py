@@ -98,6 +98,11 @@ def main():
     cfg.setdefault("timing", {})["episode_slots"] = args.slots
 
     llm_cfg = llm_settings(args.llm_config)
+    if not args.mock and not llm_cfg.get("api_key"):
+        raise SystemExit(
+            "LLM_API_KEY is not set. Add it to .env (gitignored), export it, "
+            "or run with --mock to test the controller without the API."
+        )
     cache_cfg = llm_cfg.get("cache", {})
     cache = None
     if not args.no_cache and cache_cfg.get("enabled", True):
@@ -203,6 +208,9 @@ def main():
     print(f"mask active        : {summary['mask_active_fraction']:.1%} of slots")
     print(f"fallback active    : {summary['fallback_active_fraction']:.1%} of slots")
     print(f"SOS violation rate : {summary['sos_violation_rate']:.1%}")
+    stats = getattr(client, "stats", lambda: {})()
+    if stats.get("last_error"):
+        print(f"last error         : {stats['last_error']}")
     print(f"wall time          : {wall_s:.1f} s")
     print(f"wrote {path}")
 

@@ -103,6 +103,23 @@ LLM_MODEL=qwen/qwen3.8-27b
 temperature, retry count, cache). Environment variables override the YAML, so
 the same code works locally, on Colab, and in tests.
 
+On Colab, add a secret named `GROQ_API_KEY` (key icon in the left sidebar), then
+write it to the gitignored `.env` before running any LLM script:
+
+```python
+import os
+from google.colab import userdata
+
+key = userdata.get("GROQ_API_KEY")
+with open("/content/uav-drl-llm/.env", "w") as f:
+    f.write("LLM_BASE_URL=https://api.groq.com/openai/v1\n")
+    f.write(f"LLM_API_KEY={key}\n")
+    f.write("LLM_MODEL=qwen/qwen3.8-27b\n")
+os.chmod("/content/uav-drl-llm/.env", 0o600)
+```
+
+Use `--mock` to test the controller without a key.
+
 The default is `qwen/qwen3.8-27b`: it is non-reasoning, uses fewer output
 tokens, and scored best on the smoke test. `openai/gpt-oss-120b` is also
 tested and still works (`--model openai/gpt-oss-120b`, with
