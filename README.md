@@ -97,6 +97,28 @@ Key training flags:
 Run names are `sac_seed<SEED>_N<N_CRITICS>`, so Pure SAC and REDQ-SAC never
 overwrite each other.
 
+### CPU-only fallback (no Colab GPU)
+
+`scripts/train_phase9.sh` trains the 15 Phase 9 checkpoints sequentially and
+resumes automatically:
+
+```bash
+# first chunk: seed 0, all three learning setups
+SEEDS="0" ./scripts/train_phase9.sh
+
+# full sweep (5 seeds x N=2, N=10, N=2_drwide)
+SEEDS="0 1 2 3 4" ./scripts/train_phase9.sh
+```
+
+It logs to `results/logs/`, checkpoints to `results/ckpt/`, and uses a light
+evaluation schedule (`100k` steps, 3 episodes) because the Phase 9 grid does
+the full 20-episode evaluation later.
+
+On an i9-13900H CPU the measured throughput is about **138 steps/s for N=2**
+(~36 min per 300k run) and **42 steps/s for N=10** (~2 h). A full 15-run sweep
+is therefore roughly 16-18 hours; run it in chunks (`SEEDS="0"`, then
+`SEEDS="1"`, ...) and keep the laptop plugged in.
+
 **Training troubleshooting**
 
 - `ModuleNotFoundError: No module named 'uavrl'` — the notebook puts
