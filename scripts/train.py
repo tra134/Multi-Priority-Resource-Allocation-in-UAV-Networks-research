@@ -41,6 +41,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from uavrl.agents.replay import ReplayBuffer
 from uavrl.agents.sac import SACAgent
+from uavrl.config import checkpoint_run_name
 from uavrl.env.scenarios import Scenario
 from uavrl.env.uav_env import UAVEnv
 from uavrl.eval.runner import run_episode
@@ -129,6 +130,8 @@ def main():
     parser.add_argument("--agent", default="sac", choices=["sac"])
     parser.add_argument("--n-critics", type=int, default=None,
                         help="override sac.N_critics (2 = Pure SAC, 10 = REDQ-SAC)")
+    parser.add_argument("--dr-wide", action="store_true",
+                        help="DR-SAC baseline: surge up to 3x, shadow up to +10 dB")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--steps", type=int, default=300000)
     parser.add_argument("--ckpt-dir", default="results/ckpt")
@@ -142,6 +145,17 @@ def main():
 
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
+
+    # ---- DR-SAC baseline (M5): wider domain randomization during training
+    if args.dr_wide:
+        dr = cfg.setdefault("training", {}).setdefault("domain_randomization", {})
+        dr.update({
+            "arrival_rate_min": 0.8,
+            "arrival_rate_max": 1.2,
+            "shadow_max_db": 10.0,
+            "surge_max": 3.0,
+        })
+        print("[dr-wide] surge up to 3x, shadow up to +10 dB")
 
     # ---- seeds
     np.random.seed(args.seed)
@@ -175,7 +189,8 @@ def main():
         rng=rng,
     )
 
-    run_name = f"{args.agent}_seed{args.seed}_N{n_critics}"
+    run_name = checkpoint_run_name(args.agent, args.seed, n_critics,
+                                   args.dr_wide)
     start_step = 1
     if args.resume:
         ckpt = os.path.join(args.ckpt_dir, f"{run_name}_latest.pt")

@@ -13,11 +13,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from uavrl.control.mask import Mask, project_bw_power
-from uavrl.control.fallback import FALLBACK_BW, FALLBACK_POWER, fallback_action
-from uavrl.env.uav_env import UAVEnv
 from uavrl.baselines.rule_shield import RuleShield
 from uavrl.baselines.static_policies import strict_priority
+from uavrl.control.fallback import FALLBACK_BW, FALLBACK_POWER, fallback_action
+from uavrl.control.mask import Mask, project_bw_power
+from uavrl.env.scenarios import Scenario
+from uavrl.env.uav_env import UAVEnv
+from uavrl.eval.runner import run_episode
 
 
 def _random_mask(rng):
@@ -88,6 +90,34 @@ def test_fallback_shares():
     assert b[0] == 0.8 and p[0] == 0.8
     a = fallback_action()
     assert a.shape == (6,)
+
+
+def test_rule_shield_counters():
+    """Phase 9 reads triggers / mask-active slots for M7."""
+    cfg = {
+        "timing": {"slot_ms": 5.0, "episode_slots": 400},
+        "channel": {"B_max": 1.0e7, "P_max": 1.0, "H": 100.0, "fc": 2.0e9},
+        "traffic": {
+            "emergency_mean_mbps": 2.0, "important_mean_mbps": 35.0,
+            "normal_mean_mbps": 28.0, "queue_cap_mbit": 2.0,
+        },
+        "reward": {"w_emg": 1.0, "w_imp": 0.5, "w_norm": 0.1, "lambda_pen": 5.0},
+        "users": {"radius_m": [400.0, 250.0, 100.0]},
+    }
+    scenario = Scenario("surge", {
+        "type": "surge", "surge_multiplier": 4.0, "duration_slots": 200,
+        "start_slot": 100,
+    }, ood=True)
+    env = UAVEnv(config=cfg, scenario=scenario, seed=3)
+    shield = RuleShield(theta_queue_bits=5000.0, m=3, ttl_slots=100,
+                        cooldown=20, latency_slots=0,
+                        base_policy=strict_priority)
+    steps, _ = run_episode(env, shield, seed=3)
+
+    assert shield.trigger_count > 0
+    assert shield.mask_active_slots > 0
+    assert shield.mask_active_slots <= len(steps)
+    assert shield.trigger_count <= len(steps)
 
 
 def test_rule_shield_cooldown_and_surge():

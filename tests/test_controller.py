@@ -11,15 +11,13 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
-from uavrl.control.hybrid_controller import HybridController
 from uavrl.agents.sac import SACAgent
-from uavrl.llm.client import MockLLMClient
-from uavrl.llm.mock import MockLLM
-from uavrl.llm.cache import LLMCache
-from uavrl.env.uav_env import UAVEnv
+from uavrl.control.hybrid_controller import HybridController
 from uavrl.env.scenarios import Scenario
+from uavrl.env.uav_env import UAVEnv
+from uavrl.llm.cache import LLMCache
+from uavrl.llm.client import MockLLMClient
 
 
 def _make_env(seed=0):
@@ -149,3 +147,54 @@ def test_failure_injection_sweep_no_crash():
         # budget never violated: env softmax guarantees it; just assert no crash
         assert summary["sos_violation_rate"] >= 0.0
     print("failure sweep: all ran without crash")
+
+
+def test_call_log_matches_counters():
+    """Phase 9 metrics read per-call diagnostics from ``call_log``."""
+    env, cfg = _make_env(seed=0)
+    agent = _make_agent(seed=1)
+    ctrl = _make_controller(env, agent, trigger_mode="hybrid", seed=7)
+    _, summary = ctrl.run_episode(seed=0)
+
+    assert len(ctrl.call_log) == summary["llm_calls"] > 0
+    for entry in ctrl.call_log:
+        assert set(entry) >= {
+            "slot", "ood", "trigger_reason", "ok", "timeout", "reason",
+            "mode", "latency_ms",
+        }
+        assert entry["latency_ms"] >= 0.0
+        if entry["ok"]:
+            assert entry["mode"] in {"NORMAL", "SOS_SURGE", "DEEP_FADING",
+                                     "COMPOUND"}
+    valid = sum(1 for e in ctrl.call_log if e["ok"])
+    invalid = sum(1 for e in ctrl.call_log if not e["ok"])
+    timeouts = sum(1 for e in ctrl.call_log if e["timeout"])
+    # A response still in flight when the episode ends is a valid call but was
+    # never applied, so the applied counter can only be lower.
+    assert summary["llm_valid"] <= valid
+    assert summary["llm_invalid"] == invalid
+    assert summary["llm_timeouts"] == timeouts
+
+
+def test_interim_fallback_fills_latency_window():
+    """M12b applies the safe fallback from trigger until the answer arrives."""
+    env, cfg = _make_env(seed=0)
+    agent = _make_agent(seed=1)
+    common = dict(
+        trigger_mode="always", cooldown=0, latency_median_ms=2000.0,
+        timeout_ms=100_000, fallback_slots=50, seed=7,
+    )
+    ctrl_plain = _make_controller(env, agent, interim_fallback=False, **common)
+    _, plain = ctrl_plain.run_episode(seed=0)
+
+    env, cfg = _make_env(seed=0)
+    agent = _make_agent(seed=1)
+    ctrl_interim = _make_controller(env, agent, interim_fallback=True, **common)
+    _, interim = ctrl_interim.run_episode(seed=0)
+
+    assert plain["llm_timeouts"] == 0
+    assert plain["fallback_active_fraction"] == 0.0
+    assert interim["fallback_active_fraction"] > 0.5
+    # Responses still arrive and install valid masks; they are preempted by the
+    # interim fallback only while the next response is in flight.
+    assert interim["llm_valid"] > 0

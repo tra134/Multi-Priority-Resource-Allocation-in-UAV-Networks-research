@@ -66,3 +66,17 @@ Format: date, what, why. (Rule 9 of plan.md Section 0.)
 | 2026-11-01 | Phase 5 calibration on the trained N=10 checkpoint: `tau_unc = 0.260117...` (99th percentile of raw U on nominal validation episodes) | First calibrated value from a real model rather than an untrained agent. Written to `configs/default.yaml`; `trigger_calibrated.yaml` remains the raw artifact |
 | 2026-11-01 | `llm_controller_smoke.py` gained `--trigger-mode`, `--tau-unc`, `--n-critics`, and config fallbacks for `theta_queue`/`cooldown` | The smoke test previously hard-coded the queue trigger, so it could not verify the calibrated uncertainty path or a checkpoint whose critic count differs from the config |
 | 2026-11-01 | `llm_controller_smoke.py` exits immediately with a clear message when `LLM_API_KEY` is missing (unless `--mock`), and prints the client's `last_error` | On Colab the gitignored `.env` does not exist; without this the run ended as a bare `CalledProcessError` with `valid=0` |
+
+## Phase 9 experiment-grid decisions
+
+| Date | Decision | Why |
+|------|----------|-----|
+| 2026-11-02 | `scripts/run_grid.py` writes one row per (method, scenario, seed, episode) to `results/final/metrics.csv` and skips rows already present | The full grid is 14 methods x 6 scenarios x 5 seeds x 20 episodes; Colab sessions are interrupted, so resumability is mandatory |
+| 2026-11-02 | Grid defaults to MockLLM; `--llm real` is opt-in | Mock runs are fast and reproducible for the main comparison. Real calls are reserved for a cost/latency validation subset |
+| 2026-11-02 | S3/S4 use a 4000 ms mock latency; real calls get a latency-inflation wrapper instead of sleeping | Reproduces the degraded-API scenario without blocking the simulation, and keeps the real call's measured latency visible |
+| 2026-11-02 | `HybridController.call_log` records trigger reason, OOD label, validity, timeout, diagnosis and latency per call | Phase 9 needs JSON-valid rate, timeout rate, diagnosis accuracy, trigger precision/recall and lead time, not just episode averages |
+| 2026-11-02 | `M12b` (`interim_fallback=True`) applies the safe fallback from trigger time until the response arrives; the fallback preempts any active mask | The original controller stored the flag but ignored it. Preemption is intentional: an in-flight response may invalidate the current mask |
+| 2026-11-02 | A call counts as a timeout when the provider reports `reason == "timeout"` or when a valid response exceeds `llm_timeout_ms` | Mock timeout injection returns `ok=False, reason="timeout"`; without this, injected timeouts were misclassified as schema failures |
+| 2026-11-02 | M5 DR-SAC trains with `--dr-wide` (arrival 0.8-1.2x, shadow <= +10 dB, surge <= 3x) and writes the `_drwide` checkpoint | Implements the plan's "just train on more OOD" baseline with a distinct filename, so it cannot overwrite M3 |
+| 2026-11-02 | Checkpoint names come from `uavrl.config.checkpoint_run_name`; the grid resolves both flat and per-run-folder Drive layouts | Training and evaluation previously duplicated the naming rule, and the Colab notebook writes `ckpt/<run>/<run>_latest.pt` while the grid expected a flat directory |
+| 2026-11-02 | `--slots` overrides `timing.episode_slots` in the loaded config | The first runner version only changed the reported row length, so smoke tests still ran the full 2000-slot episode |

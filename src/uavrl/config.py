@@ -65,6 +65,19 @@ def load_yaml(path: Optional[os.PathLike | str] = None) -> dict:
         return yaml.safe_load(f) or {}
 
 
+def checkpoint_run_name(agent: str, seed: int, n_critics: int,
+                        dr_wide: bool = False) -> str:
+    """Canonical run/checkpoint name, shared by training and evaluation.
+
+    ``scripts/train.py`` writes ``<name>_latest.pt`` and
+    ``scripts/run_grid.py`` reads it, so both must agree on the suffix.
+    """
+    name = f"{agent}_seed{seed}_N{n_critics}"
+    if dr_wide:
+        name += "_drwide"
+    return name
+
+
 def llm_settings(config_path: Optional[os.PathLike | str] = None) -> dict:
     """Return the ``llm`` section of ``configs/llm.yaml`` merged with env vars.
 

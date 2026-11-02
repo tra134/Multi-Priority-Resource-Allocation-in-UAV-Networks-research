@@ -7,7 +7,12 @@ from pathlib import Path
 
 import yaml
 
-from uavrl.config import find_project_root, llm_settings, load_env
+from uavrl.config import (
+    checkpoint_run_name,
+    find_project_root,
+    llm_settings,
+    load_env,
+)
 
 
 def test_load_env_does_not_override_by_default(tmp_path, monkeypatch):
@@ -56,3 +61,10 @@ def test_llm_settings_env_wins(tmp_path, monkeypatch):
 def test_find_project_root_contains_pyproject():
     root = find_project_root()
     assert (Path(root) / "pyproject.toml").exists()
+
+
+def test_checkpoint_run_name_matches_grid_layout():
+    """train.py and run_grid.py must agree on the checkpoint filename."""
+    assert checkpoint_run_name("sac", 0, 10) == "sac_seed0_N10"
+    assert checkpoint_run_name("sac", 3, 2, dr_wide=True) == \
+        "sac_seed3_N2_drwide"

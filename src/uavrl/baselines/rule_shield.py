@@ -44,6 +44,8 @@ class RuleShield:
         self.active_mask = None          # Mask or None
         self.pending_mask = None         # (mask, applies_at_slot) for latency
         self.slot = -1
+        self.trigger_count = 0
+        self.mask_active_slots = 0
 
     def reset(self):
         self.consec = 0
@@ -51,6 +53,8 @@ class RuleShield:
         self.active_mask = None
         self.pending_mask = None
         self.slot = -1
+        self.trigger_count = 0
+        self.mask_active_slots = 0
 
     def __call__(self, obs, info):
         self.slot += 1
@@ -96,6 +100,7 @@ class RuleShield:
                 self.active_mask = new_mask
             self.consec = 0
             self.cooldown_counter = self.cooldown
+            self.trigger_count += 1
 
         # base action + projection through active mask.
         # base_action is in [-1,1]^6; env maps via softmax(3*x) to shares.
@@ -103,6 +108,8 @@ class RuleShield:
         b_share = self._shares(base_action[:3])
         p_share = self._shares(base_action[3:])
         b, p = project_bw_power(b_share, p_share, self.active_mask)
+        if self.active_mask is not None:
+            self.mask_active_slots += 1
         # convert projected shares back to action space so the env's softmax
         # recovers exactly b and p.
         return np.concatenate([self._action(b), self._action(p)]).astype(np.float32)

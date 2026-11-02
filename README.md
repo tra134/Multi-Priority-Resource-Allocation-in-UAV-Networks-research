@@ -21,7 +21,7 @@ source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -U pip
 pip install -e ".[dev]"
 
-# 2. Run the test suite (66 tests)
+# 2. Run the test suite (70 tests)
 pytest -q
 
 # 3. Phase 1: channel & traffic plots
@@ -45,7 +45,27 @@ python scripts/train.py --agent sac --n-critics 10 --steps 300000 --resume
 # 6. Phase 8: real-LLM smoke test (Groq) + Claim E inference benchmark
 python scripts/llm_smoke_test.py --n 20
 python scripts/benchmark_inference.py
+
+# 7. Phase 9: train the 15 checkpoints (5 seeds x N=2, N=10, DR-wide)
+for seed in 0 1 2 3 4; do
+    python scripts/train.py --agent sac --n-critics 2  --seed $seed --steps 300000 --ckpt-dir results/ckpt --resume
+    python scripts/train.py --agent sac --n-critics 10 --seed $seed --steps 300000 --ckpt-dir results/ckpt --resume
+    python scripts/train.py --agent sac --n-critics 2  --seed $seed --steps 300000 --ckpt-dir results/ckpt --dr-wide --resume
+done
+
+# 8. Phase 9 grid (mock LLM, S0-S5; resumable, safe to interrupt)
+python scripts/run_grid.py --seeds 0 --scenarios S0,S1 --episodes 1 --slots 300  # smoke
+python scripts/run_grid.py --seeds 0                 # one seed
+python scripts/run_grid.py --seeds 0,1,2,3,4         # full grid -> results/final/metrics.csv
+
+# Optional: real Groq arbiter (costs tokens; --no-cache keeps latency honest)
+python scripts/run_grid.py --seeds 0 --llm real --no-cache
 ```
+
+`run_grid.py` finds checkpoints either flat
+(`results/ckpt/sac_seed0_N10_latest.pt`) or in per-run folders
+(`results/ckpt/sac_seed0_N10/sac_seed0_N10_latest.pt`), so the Colab notebook
+layout works unchanged.
 
 ## Colab training
 

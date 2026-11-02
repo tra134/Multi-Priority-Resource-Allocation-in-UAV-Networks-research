@@ -32,11 +32,11 @@ from typing import Optional
 
 import numpy as np
 
-from ..control.mask import Mask, project_bw_power
 from ..control.fallback import FALLBACK_BW, FALLBACK_POWER
-from ..llm.schema import LLMResponse
-from ..llm.prompt import build_prompt
+from ..control.mask import Mask, project_bw_power
 from ..llm.client import LLMClient
+from ..llm.prompt import build_prompt
+from ..llm.schema import LLMResponse
 
 WINDOW = 50  # sliding window for CSI statistics / violation fraction
 
@@ -114,6 +114,7 @@ class HybridController:
         self.cache_hits = 0
         self.mask_active_slots = 0
         self.fallback_active_slots = 0
+        self.call_log = []            # one dict per LLM call (Phase 9 metrics)
 
     # ------------------------------------------------------------------ reset
     def reset(self):
@@ -133,6 +134,7 @@ class HybridController:
         self.cache_hits = 0
         self.mask_active_slots = 0
         self.fallback_active_slots = 0
+        self.call_log = []
 
     # ------------------------------------------------------------------ features
     def _build_features(self, obs, info, trigger_reason):
@@ -268,6 +270,19 @@ class HybridController:
                                 "power_floor_emg": self.active_mask.power_floor_emg}
                 prompt = build_prompt(features, current_mask=cur_mask)
                 resp, L, ok, reason = self.llm_client.call(prompt, features)
+                mode = resp.get("operating_mode") if ok and isinstance(resp, dict) else None
+                self.call_log.append({
+                    "slot": t,
+                    "ood": bool(info.get("ood_flag", False)),
+                    "trigger_reason": features["trigger_reason"],
+                    "ok": bool(ok),
+                    "timeout": bool(
+                        reason == "timeout" or (ok and L > self.timeout_ms)
+                    ),
+                    "reason": reason,
+                    "mode": mode,
+                    "latency_ms": float(L),
+                })
                 if not ok:
                     self.invalid += 1
                     self.fallback_until = t + self.fallback_slots
@@ -279,6 +294,9 @@ class HybridController:
                     self.pending_responses.append(
                         {"arrival_slot": arrival_slot, "response": resp}
                     )
+                    if self.interim_fallback:
+                        # M12b: safe allocation while the response is in flight.
+                        self.fallback_until = max(self.fallback_until, arrival_slot)
                 self.cooldown_counter = self.cooldown
 
             # ---- 6. masks naturally expire (handled at top of next loop)
@@ -337,6 +355,7 @@ class HybridController:
             "llm_timeouts": int(self.timeouts),
             "mask_active_fraction": float(np.mean(arr["mask_active"])),
             "fallback_active_fraction": float(np.mean(arr["fallback_active"])),
+            "trigger_fraction": float(np.mean(arr["trigger"])),
             "final_battery_fraction": float(arr.get(
                 "battery_fraction", np.ones(n))[-1]) if "battery_fraction" in arr else 1.0,
         }
