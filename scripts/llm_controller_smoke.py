@@ -182,6 +182,7 @@ def main():
         "scenario": args.scenario,
         "slots": args.slots,
         "seed": args.seed,
+        "ckpt": args.ckpt,
         "trigger_mode": args.trigger_mode,
         "tau_unc": tau_unc,
         "theta_queue": theta_queue,
@@ -199,6 +200,7 @@ def main():
 
     print("=== controller + LLM smoke test ===")
     print(f"model              : {model}")
+    print(f"checkpoint         : {args.ckpt or '(untrained)'}")
     print(f"scenario / slots   : {args.scenario} / {args.slots}")
     print(f"trigger            : {args.trigger_mode} (tau_unc={tau_unc}, "
           f"theta_queue={theta_queue})")
