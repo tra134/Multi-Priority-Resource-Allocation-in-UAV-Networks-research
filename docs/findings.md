@@ -51,6 +51,21 @@ Per-plan notes on each figure/experiment. One to two sentences per plot.
 - OOD AUROC with the trained checkpoint: **surge 0.299, shadow 0.801, compound 0.993, unseen 0.997**. The uncertainty trigger therefore works for shadowing/compound/unseen but *fails on pure surge*: all critics agree that the load is high, so epistemic spread does not rise. The hybrid trigger must rely on the queue term for S1.
 - Detection lead time is `-497` in every scenario because the first trigger fires near slot 3 (startup transient), long before the OOD window. Phase 9's `run_grid.py` measures lead time only inside a 100-slot pre-OOD window, so the metric is not dominated by that transient.
 
+## Phase 9 — Queue-trigger calibration (`theta_queue`)
+
+Queue-only trigger sweep on validation seeds (S1/S2/S4, 3 episodes each; mock LLM at nominal latency):
+
+| `theta_queue` | SOS violation | LLM call rate | Mask active |
+|---|---|---|---|
+| 2,000 | 3.12% | 2.00% | 79.5% |
+| 5,000 | 3.49% | 2.00% | 79.6% |
+| 10,000 | 2.60% | 1.98% | 81.1% |
+| **20,000** | **1.87%** | **1.04%** | 78.5% |
+| 35,000 | 2.99% | 0.27% | 27.8% |
+| 50,000 | 2.82% | 0.25% | 27.9% |
+
+No threshold reached the 1% target, but 20,000 is a clear knee: the lowest violation rate, half the call rate of 10,000, and it matches the Rule-Shield derivation (two slots of Emergency drain at the nominal 2 Mbps rate). The config now uses **20,000 bits**. Higher thresholds save calls but lose safety.
+
 ## Phase 2 — Gymnasium environment + baselines
 
 - `results/phase2/baselines.csv`: nominal load calibrated to 53.9% of mean achievable capacity (target 50-60%).

@@ -83,7 +83,7 @@ def main():
     parser.add_argument("--slots", type=int, default=300)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--theta-queue", type=float, default=None,
-                        help="default: trigger.theta_queue, else 50000 bits")
+                        help="default: trigger.theta_queue, else 20000 bits")
     parser.add_argument("--cooldown", type=int, default=None)
     parser.add_argument("--timeout-ms", type=int, default=5000)
     parser.add_argument("--model", default=None)
@@ -153,7 +153,7 @@ def main():
     theta_queue = (args.theta_queue if args.theta_queue is not None
                    else trigger_cfg.get("theta_queue"))
     if theta_queue is None:
-        theta_queue = 50000.0
+        theta_queue = 20000.0
     cooldown = (args.cooldown if args.cooldown is not None
                 else int(trigger_cfg.get("cooldown", 80)))
 

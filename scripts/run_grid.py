@@ -390,7 +390,7 @@ def main():
     theta_queue = (args.theta_queue if args.theta_queue is not None
                    else trigger_cfg.get("theta_queue"))
     if theta_queue is None:
-        theta_queue = 50000.0
+        theta_queue = 20000.0
     cooldown = (args.cooldown if args.cooldown is not None
                 else int(trigger_cfg.get("cooldown", 50)))
     ttl_slots = (args.ttl_slots if args.ttl_slots is not None

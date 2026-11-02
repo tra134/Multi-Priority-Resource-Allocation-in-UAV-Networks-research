@@ -60,7 +60,7 @@ sac:
 
 trigger:
   tau_unc: 0.2601170632243155  # Phase 5, 99th pct of U on nominal val (sac_seed0_N10)
-  theta_queue: null             # tuned in Phase 7
+  theta_queue: 20000.0          # Phase 9 sweep: SOS 1.87% at 1.04% calls (best trade-off)
   debounce_m: 3
   cooldown: 50                  # slots (= 250 ms)
   ttl_slots: 600                # LLM mask TTL (= 3 s)
