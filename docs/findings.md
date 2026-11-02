@@ -47,7 +47,9 @@ Per-plan notes on each figure/experiment. One to two sentences per plot.
 - `src/uavrl/uncertainty/calibration.py`: U_t = ensemble std of Q(s,a); normalized U/(|meanQ|+c); percentile calibration; AUROC/precision/recall/lead-time; rank-based AUROC.
 - `scripts/calibrate_tau.py`: tau_unc = q-th percentile of U on nominal validation episodes; OOD evaluation on surge/shadow/compound/unseen; writes trigger_calibrated.yaml.
 - `scripts/plot_uncertainty.py`: U_t timelines with OOD windows shaded.
-- Illustrative local run (untrained agent): raw-U AUROC ≈ 0.85 (shadow), 0.88 (compound), 0.90 (unseen) — supports Claim A direction; real numbers require the Colab-trained agent (deferred).
+- Calibration recheck on the trained N=10 checkpoint at step ~300k (20 nominal validation episodes): raw p99 = **0.2541**, normalized p99 = **0.0065**. The config keeps 0.2601 from the 50-episode run; the 2.3% difference is within sampling noise, so no change.
+- OOD AUROC with the trained checkpoint: **surge 0.299, shadow 0.801, compound 0.993, unseen 0.997**. The uncertainty trigger therefore works for shadowing/compound/unseen but *fails on pure surge*: all critics agree that the load is high, so epistemic spread does not rise. The hybrid trigger must rely on the queue term for S1.
+- Detection lead time is `-497` in every scenario because the first trigger fires near slot 3 (startup transient), long before the OOD window. Phase 9's `run_grid.py` measures lead time only inside a 100-slot pre-OOD window, so the metric is not dominated by that transient.
 
 ## Phase 2 — Gymnasium environment + baselines
 

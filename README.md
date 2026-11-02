@@ -53,7 +53,9 @@ for seed in 0 1 2 3 4; do
     python scripts/train.py --agent sac --n-critics 2  --seed $seed --steps 300000 --ckpt-dir results/ckpt --dr-wide --resume
 done
 
-# 8. Phase 9 grid (mock LLM, S0-S5; resumable, safe to interrupt)
+# 8. Phase 9: tune the queue trigger on validation seeds, then run the grid
+python scripts/calibrate_theta.py --ckpt results/ckpt/sac_seed0_N10_latest.pt \
+    --scenarios S1,S2,S4 --episodes 3 --out results/phase9/theta_sweep.csv
 python scripts/run_grid.py --seeds 0 --scenarios S0,S1 --episodes 1 --slots 300  # smoke
 python scripts/run_grid.py --seeds 0                 # one seed
 python scripts/run_grid.py --seeds 0,1,2,3,4         # full grid -> results/final/metrics.csv
