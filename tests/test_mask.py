@@ -188,3 +188,89 @@ def test_budget_constraints_random_steps():
             obs, _ = env.reset(seed=5)
     assert worst_b < 1e-4 and worst_p < 1e-4
     assert min_share >= -1e-6
+
+
+def test_projection_leaves_feasible_action_unchanged():
+    """F18: an action that already meets the floors must not be altered."""
+    mask = Mask(bw_floor=np.array([0.3, 0.1, 0.0]), power_floor_emg=0.4, expires_at=100)
+    b_raw = np.array([0.5, 0.3, 0.2])
+    p_raw = np.array([0.6, 0.3, 0.1])
+    b, p = project_bw_power(b_raw, p_raw, mask)
+    assert np.allclose(b, b_raw) and np.allclose(p, p_raw)
+
+
+def test_projection_is_idempotent():
+    rng = np.random.default_rng(5)
+    for _ in range(200):
+        mask = _random_mask(rng)
+        b_raw = rng.random(3); b_raw /= b_raw.sum()
+        p_raw = rng.random(3); p_raw /= p_raw.sum()
+        b1, p1 = project_bw_power(b_raw, p_raw, mask)
+        b2, p2 = project_bw_power(b1, p1, mask)
+        assert np.allclose(b1, b2, atol=1e-9) and np.allclose(p1, p2, atol=1e-9)
+
+
+def test_projection_edge_cases_sum_to_one():
+    # raw entirely below the floors, and floors summing to exactly 1
+    for floor in ([0.9, 0.05, 0.0], [0.5, 0.3, 0.2], [0.0, 0.0, 0.0]):
+        mask = Mask(bw_floor=np.array(floor), power_floor_emg=0.0, expires_at=10)
+        for raw in ([1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1 / 3] * 3):
+            b, p = project_bw_power(np.array(raw), np.array(raw), mask)
+            assert abs(b.sum() - 1.0) < 1e-9 and np.all(b >= np.array(floor) - 1e-9)
+            assert abs(p.sum() - 1.0) < 1e-9
+
+
+# ---------------------------------------------------------------- training masks (F11)
+from uavrl.control.mask import RandomMaskSampler, project_raw_action  # noqa: E402
+
+
+def _shares3(action):
+    e = np.exp(3.0 * np.asarray(action, dtype=float))
+    return e / e.sum()
+
+
+def test_sampler_masks_are_schema_valid_and_about_30_percent_of_episodes():
+    sampler = RandomMaskSampler(prob=0.3, episode_slots=2000, rng=np.random.default_rng(0))
+    used = 0
+    for _ in range(2000):
+        sampler.new_episode()
+        if sampler.mask is None:
+            continue
+        used += 1
+        f = sampler.mask.bw_floor
+        assert sampler.mask.valid()
+        assert f[0] <= 0.9 and f.sum() <= 0.95 + 1e-9
+        assert 50 <= sampler.mask.expires_at - sampler.start <= 1000
+    assert 0.25 < used / 2000 < 0.35
+
+
+def test_sampler_disabled_leaves_actions_untouched():
+    sampler = RandomMaskSampler(prob=0.0, rng=np.random.default_rng(0))
+    sampler.new_episode()
+    a = np.array([0.3, -0.2, 0.1, 0.0, 0.5, -0.5], dtype=np.float32)
+    assert np.array_equal(sampler.apply(10, a), a)
+
+
+def test_projected_raw_action_respects_floors_in_the_environment_mapping():
+    rng = np.random.default_rng(3)
+    sampler = RandomMaskSampler(prob=1.0, rng=rng)
+    for _ in range(50):
+        sampler.new_episode()
+        mask = sampler.mask
+        a = rng.uniform(-1, 1, 6)
+        out = project_raw_action(a, mask)
+        b, p = _shares3(out[:3]), _shares3(out[3:])
+        assert abs(b.sum() - 1) < 1e-6 and abs(p.sum() - 1) < 1e-6
+        assert np.all(b >= mask.bw_floor - 1e-5)
+        assert p[0] >= mask.power_floor_emg - 1e-5
+
+
+def test_sampler_only_acts_inside_its_window():
+    sampler = RandomMaskSampler(prob=1.0, rng=np.random.default_rng(1))
+    sampler.new_episode()
+    a = np.zeros(6, dtype=np.float32)
+    before = max(sampler.start - 1, 0) if sampler.start > 0 else None
+    if before is not None:
+        assert np.array_equal(sampler.apply(before, a), a)
+    assert not np.array_equal(sampler.apply(sampler.start, a), a) or sampler.mask.bw_floor[0] <= 1 / 3
+    assert np.array_equal(sampler.apply(sampler.mask.expires_at, a), a)

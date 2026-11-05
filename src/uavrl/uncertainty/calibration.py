@@ -19,9 +19,9 @@ def uncertainty_at(agent, obs, action):
     return agent.uncertainty(obs, action)
 
 
-def collect_trajectory(env, agent, deterministic=True):
+def collect_trajectory(env, agent, deterministic=True, seed=None):
     """Run one episode; return lists of (U_t, meanQ, ood_flag, delay_emg, slot)."""
-    obs, _ = env.reset()
+    obs, _ = env.reset() if seed is None else env.reset(seed=seed)
     rows = []
     done = False
     while not done:
@@ -50,33 +50,57 @@ def normalize_U(rows, c=1.0):
     ]
 
 
-def percentile_U(rows, q=99.0, normalized=False):
-    """q-th percentile of U over a collection of trajectories (list of row-lists)."""
+STARTUP_SLOTS = 50   # F15: the first slots are a startup transient, not data
+
+
+def percentile_U(rows, q=99.0, normalized=False, skip_slots=0):
+    """q-th percentile of U over trajectories, ignoring the first ``skip_slots`` slots."""
     vals = []
     for traj in rows:
-        for r in traj:
+        for i, r in enumerate(traj):
+            if int(r.get("slot", i)) < skip_slots:
+                continue
             vals.append(r["U_norm"] if normalized else r["U"])
     return float(np.percentile(vals, q))
 
 
-def ood_metrics(rows, tau, D_th_s=15.0 / 1000.0, normalized=False):
-    """Precision/recall/detection-lead-time for one trajectory vs threshold tau.
+def ood_metrics(rows, tau, D_th_s=15.0 / 1000.0, normalized=False, skip_slots=0):
+    """Precision/recall/detection metrics for one trajectory vs threshold tau.
 
-    Returns dict with per-slot arrays and scalar summary metrics.
-    Lead time = first trigger slot - first Emergency-violation slot (negative
-    = warned before damage).
+    Triggers in the first ``skip_slots`` slots are ignored (startup transient,
+    F15).  With an OOD window, the first trigger and first violation are looked
+    for *inside the window*, so an unrelated early trigger no longer distorts
+    the result (F9).  Without a window they are the first overall (false
+    triggers on nominal episodes).
+
+    lead_time      = first trigger - first violation (negative = warned before damage)
+    detection_delay = first trigger inside the window - window start
     """
     us = np.array([r["U_norm"] if normalized else r["U"] for r in rows])
     ood = np.array([r["ood_flag"] for r in rows], dtype=bool)
     viol = np.array([r["delay_emg_s"] > D_th_s for r in rows])
     trigger = us > tau
+    trigger[:skip_slots] = False
+
     first_ood = int(np.argmax(ood)) if ood.any() else None
-    first_trigger = int(np.argmax(trigger)) if trigger.any() else None
-    first_viol = int(np.argmax(viol)) if viol.any() else None
+    if ood.any():
+        end = first_ood + int(np.argmax(~ood[first_ood:])) if (~ood[first_ood:]).any() else len(ood)
+        window = slice(first_ood, end)
+        t_idx = np.flatnonzero(trigger[window])
+        v_idx = np.flatnonzero(viol[window])
+        first_trigger = int(first_ood + t_idx[0]) if t_idx.size else None
+        first_viol = int(first_ood + v_idx[0]) if v_idx.size else None
+    else:
+        first_trigger = int(np.argmax(trigger)) if trigger.any() else None
+        first_viol = int(np.argmax(viol)) if viol.any() else None
     lead_time = None
     if first_trigger is not None and first_viol is not None:
         lead_time = first_trigger - first_viol
+    detection_delay = (
+        first_trigger - first_ood if (first_trigger is not None and first_ood is not None) else None
+    )
     return {
+        "detection_delay": detection_delay,
         "U": us,
         "ood": ood,
         "violation": viol,

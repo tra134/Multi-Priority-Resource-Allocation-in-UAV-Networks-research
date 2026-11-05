@@ -11,6 +11,8 @@ theta_queue is tuned on validation scenarios only (never on test scenarios).
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 from ..control.mask import Mask, project_bw_power
@@ -28,6 +30,9 @@ class RuleShield:
         base_policy=strict_priority,
         bw_floor_emg=0.5,
         power_floor_emg=0.5,
+        latency_model=None,
+        slot_ms=5.0,
+        rng=None,
     ):
         self.theta_queue_bits = float(theta_queue_bits)
         self.m = int(m)
@@ -37,6 +42,11 @@ class RuleShield:
         self.base_policy = base_policy
         self.bw_floor_emg = float(bw_floor_emg)
         self.power_floor_emg = float(power_floor_emg)
+        # With a latency model the mask arrives after a sampled delay, drawn
+        # from the same fitted distribution as the LLM arbiter (F14).
+        self.latency_model = latency_model
+        self.slot_ms = float(slot_ms)
+        self.rng = np.random.default_rng() if rng is None else rng
 
         # state
         self.consec = 0
@@ -85,17 +95,24 @@ class RuleShield:
             self.consec >= self.m
             and self.cooldown_counter == 0
             and self.active_mask is None
+            and self.pending_mask is None
         ):
             bw_floor = np.array(
                 [self.bw_floor_emg, 0.0, 0.0], dtype=float
             )
+            if self.latency_model is not None:
+                lat_slots = math.ceil(self.latency_model.sample(self.rng) / self.slot_ms)
+            else:
+                lat_slots = self.latency_slots
+            applies_at = self.slot + lat_slots
+            # TTL counts from the moment the mask is applied (as for the LLM).
             new_mask = Mask(
                 bw_floor=bw_floor,
                 power_floor_emg=self.power_floor_emg,
-                expires_at=self.slot + self.ttl_slots,
+                expires_at=applies_at + self.ttl_slots,
             )
-            if self.latency_slots > 0:
-                self.pending_mask = (new_mask, self.slot + self.latency_slots)
+            if lat_slots > 0:
+                self.pending_mask = (new_mask, applies_at)
             else:
                 self.active_mask = new_mask
             self.consec = 0
@@ -126,6 +143,39 @@ class RuleShield:
         shares = np.clip(np.asarray(shares, dtype=float), 1e-9, 1.0)
         log_s = np.log(shares)
         return (log_s - np.mean(log_s)) / 3.0
+
+
+class FixedReservation:
+    """M13: a constant Emergency floor on top of a base policy, no trigger.
+
+    Tells whether adaptivity is needed at all: if a permanent reservation does
+    as well as the LLM, the trigger and the LLM add nothing.
+    """
+
+    def __init__(self, base_policy, bw_floor_emg=0.5, power_floor_emg=0.5):
+        self.base_policy = base_policy
+        self.mask = Mask(
+            bw_floor=np.array([bw_floor_emg, 0.0, 0.0], dtype=float),
+            power_floor_emg=float(power_floor_emg),
+            expires_at=10**12,
+        )
+        self.mask_active_slots = 0
+        self.trigger_count = 0
+
+    def reset(self):
+        self.mask_active_slots = 0
+
+    def __call__(self, obs, info):
+        base_action = self.base_policy(obs, info)
+        b, p = project_bw_power(
+            RuleShield._shares(base_action[:3]),
+            RuleShield._shares(base_action[3:]),
+            self.mask,
+        )
+        self.mask_active_slots += 1
+        return np.concatenate(
+            [RuleShield._action(b), RuleShield._action(p)]
+        ).astype(np.float32)
 
 
 def rule_shield(obs, info):

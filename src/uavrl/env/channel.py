@@ -154,6 +154,18 @@ class Channel:
         self._pl_los = fspl + self.eta_los_db
         self._pl_nlos = fspl + self.eta_nlos_db
 
+    def reference_gain(self):
+        """Large-scale mean gain per class: no fading, no extra shadowing.
+
+        This is the link-budget value a base station plans around.  It is used
+        to normalize CSI shown to the LLM so that nominal is about 1.0 (F21).
+        It reveals nothing about disturbances.
+        """
+        if self._d is None:
+            raise RuntimeError("call set_geometry() first")
+        pl = self._p_los * self._pl_los + (1.0 - self._p_los) * self._pl_nlos
+        return 10.0 ** (-pl / 10.0)
+
     def los_probability(self, radius_m):
         return p_los(self.elevation_angle_deg(radius_m), self.a, self.b)
 

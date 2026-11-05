@@ -194,7 +194,8 @@ def main():
     }
     out_dir = os.path.join(str(find_project_root()), args.out)
     os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, "controller_smoke.json")
+    # Mock runs must never replace the real-model artifact.
+    path = os.path.join(out_dir, "controller_smoke_mock.json" if args.mock else "controller_smoke.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
 

@@ -35,6 +35,7 @@ import numpy as np
 from ..control.fallback import FALLBACK_BW, FALLBACK_POWER
 from ..control.mask import Mask, project_bw_power
 from ..llm.client import LLMClient
+from ..llm.latency import LatencyModel
 from ..llm.prompt import build_prompt
 from ..llm.schema import LLMResponse
 
@@ -73,6 +74,8 @@ class HybridController:
         random_rate: float = 0.05,
         interim_fallback: bool = False,
         rng=None,
+        latency_model: Optional[LatencyModel] = None,
+        use_fitted_latency: bool = False,
     ):
         self.agent = agent
         self.env = env
@@ -92,6 +95,14 @@ class HybridController:
         self.rng = np.random.default_rng() if rng is None else rng
 
         self.slot_ms = float(cfg.get("timing", {}).get("slot_ms", 5.0))
+        timing = cfg.get("timing", {})
+        # F13: scheduling latency comes from the fitted model whenever the
+        # client reports a cache hit (0 ms) or use_fitted_latency is set.
+        self.latency_model = latency_model or LatencyModel(
+            median_ms=float(timing.get("llm_latency_median_ms", 350.0)),
+            sigma=float(timing.get("llm_latency_sigma", 0.6)),
+        )
+        self.use_fitted_latency = bool(use_fitted_latency)
         self.fallback_bw = FALLBACK_BW
         self.fallback_power = FALLBACK_POWER
 
@@ -99,6 +110,8 @@ class HybridController:
         self.active_mask = None
         self.fallback_until = -1
         self.pending_responses = []   # {arrival_slot, response}
+        self.pending_fallbacks = []   # slots at which a failure becomes known (F5)
+        self.csi_ref = np.ones(3)
         self.consec_unc = 0
         self.cooldown_counter = 0
         self.slot = -1
@@ -121,6 +134,7 @@ class HybridController:
         self.active_mask = None
         self.fallback_until = -1
         self.pending_responses = []
+        self.pending_fallbacks = []
         self.consec_unc = 0
         self.cooldown_counter = 0
         self.slot = -1
@@ -138,10 +152,8 @@ class HybridController:
 
     # ------------------------------------------------------------------ features
     def _build_features(self, obs, info, trigger_reason):
-        csi = np.asarray(info.get("gain", np.zeros(3)), dtype=float)
-        self.csi_hist.append(csi.copy())
-        if len(self.csi_hist) > WINDOW:
-            self.csi_hist.pop(0)
+        # csi_hist holds the last WINDOW slots, normalized so nominal is ~1.0
+        # (F6: updated every slot; F21: normalized by the reference gain).
         hist = np.array(self.csi_hist)  # (T, 3)
         feats = {"slot": self.slot, "trigger_reason": trigger_reason}
         for j, cls in enumerate(["emergency", "important", "normal"]):
@@ -159,9 +171,12 @@ class HybridController:
         return feats
 
     # ------------------------------------------------------------------ run one episode
-    def run_episode(self, seed=None, deterministic_actor=False):
+    def run_episode(self, seed=None, deterministic_actor=True):
         obs, info = self.env.reset(seed=seed)
         self.reset()
+        self.csi_ref = np.maximum(
+            np.asarray(self.env.channel.reference_gain(), dtype=float), 1e-30
+        )
         steps = []
         done = False
         self._last_u = (0.0, 0.0)
@@ -177,6 +192,12 @@ class HybridController:
                     try:
                         parsed = LLMResponse(**resp["response"])
                         mp = parsed.to_mask()
+                        if parsed.operating_mode == "NORMAL":
+                            # NORMAL releases the shield instead of installing
+                            # the model's floors (F18).
+                            self.active_mask = None
+                            self.valid += 1
+                            continue
                         mask = Mask(
                             bw_floor=np.array(mp["bw_floor"], dtype=float),
                             power_floor_emg=float(mp["power_floor_emg"]),
@@ -194,6 +215,15 @@ class HybridController:
                 else:
                     still_pending.append(resp)
             self.pending_responses = still_pending
+
+            # ---- failures become known only now (F5): start their fallback
+            remaining = []
+            for start in self.pending_fallbacks:
+                if start <= t:
+                    self.fallback_until = max(self.fallback_until, start + self.fallback_slots)
+                else:
+                    remaining.append(start)
+            self.pending_fallbacks = remaining
 
             # ---- expire active mask
             if self.active_mask is not None and self.active_mask.expired(t):
@@ -227,6 +257,12 @@ class HybridController:
 
             # ---- 4. env step
             obs, reward, terminated, truncated, info = self.env.step(action)
+
+            # ---- CSI history: every slot, normalized by the reference gain
+            gain = np.asarray(info.get("gain", np.zeros(3)), dtype=float)
+            self.csi_hist.append(gain / self.csi_ref)
+            if len(self.csi_hist) > WINDOW:
+                self.csi_hist.pop(0)
 
             # ---- 5. trigger
             q_emg = float(info.get("queue_bits", np.zeros(3))[0])
@@ -269,34 +305,44 @@ class HybridController:
                     cur_mask = {"bw_floor": self.active_mask.bw_floor.tolist(),
                                 "power_floor_emg": self.active_mask.power_floor_emg}
                 prompt = build_prompt(features, current_mask=cur_mask)
-                resp, L, ok, reason = self.llm_client.call(prompt, features)
+                resp, L_meas, ok, reason = self.llm_client.call(prompt, features)
+                if self.use_fitted_latency or reason == "cache":
+                    L = self.latency_model.sample(self.rng)
+                else:
+                    L = float(L_meas)
+                is_timeout = bool(reason == "timeout" or L > self.timeout_ms)
                 mode = resp.get("operating_mode") if ok and isinstance(resp, dict) else None
                 self.call_log.append({
                     "slot": t,
                     "ood": bool(info.get("ood_flag", False)),
                     "trigger_reason": features["trigger_reason"],
-                    "ok": bool(ok),
-                    "timeout": bool(
-                        reason == "timeout" or (ok and L > self.timeout_ms)
-                    ),
+                    "ok": bool(ok and not is_timeout),
+                    "timeout": is_timeout,
                     "reason": reason,
                     "mode": mode,
                     "latency_ms": float(L),
+                    "measured_latency_ms": (
+                        float("nan") if reason == "cache" else float(L_meas)
+                    ),
                 })
-                if not ok:
-                    self.invalid += 1
-                    self.fallback_until = t + self.fallback_slots
-                elif L > self.timeout_ms:
+                if is_timeout:
+                    # The caller only learns of the timeout after timeout_ms.
+                    known_slot = t + math.ceil(self.timeout_ms / self.slot_ms)
                     self.timeouts += 1
-                    self.fallback_until = t + self.fallback_slots
+                    self.pending_fallbacks.append(known_slot)
+                elif not ok:
+                    # An invalid reply is known when it arrives.
+                    known_slot = t + math.ceil(L / self.slot_ms)
+                    self.invalid += 1
+                    self.pending_fallbacks.append(known_slot)
                 else:
-                    arrival_slot = t + math.ceil(L / self.slot_ms)
+                    known_slot = t + math.ceil(L / self.slot_ms)
                     self.pending_responses.append(
-                        {"arrival_slot": arrival_slot, "response": resp}
+                        {"arrival_slot": known_slot, "response": resp}
                     )
-                    if self.interim_fallback:
-                        # M12b: safe allocation while the response is in flight.
-                        self.fallback_until = max(self.fallback_until, arrival_slot)
+                if self.interim_fallback:
+                    # M12b: safe allocation while the answer is in flight.
+                    self.fallback_until = max(self.fallback_until, known_slot)
                 self.cooldown_counter = self.cooldown
 
             # ---- 6. masks naturally expire (handled at top of next loop)
@@ -319,6 +365,14 @@ class HybridController:
                 "queue_imp_bits": float(info["queue_bits"][1]),
                 "queue_norm_bits": float(info["queue_bits"][2]),
                 "drops_emg_bits": float(info["drops_bits"][0]),
+                "drops_imp_bits": float(info["drops_bits"][1]),
+                "drops_norm_bits": float(info["drops_bits"][2]),
+                "served_emg_bits": float(info["served_bits"][0]),
+                "served_imp_bits": float(info["served_bits"][1]),
+                "served_norm_bits": float(info["served_bits"][2]),
+                "arrival_emg_bits": float(info["arrival_bits"][0]),
+                "b_sum": float(info["b_sum"]),
+                "p_sum": float(info["p_sum"]),
                 "U_t": float(self._last_u[0]),
                 "meanQ": float(self._last_u[1]),
                 "trigger": bool(trigger),

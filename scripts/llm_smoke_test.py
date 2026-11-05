@@ -247,9 +247,11 @@ def main():
     if rows:
         out_dir = os.path.join(str(root), args.out)
         os.makedirs(out_dir, exist_ok=True)
-        with open(os.path.join(out_dir, "smoke_test.json"), "w", encoding="utf-8") as f:
+        # Mock runs must never replace the real-model artifacts.
+        stem = "smoke_test_mock" if args.mock else "smoke_test"
+        with open(os.path.join(out_dir, f"{stem}.json"), "w", encoding="utf-8") as f:
             json.dump({"summary": summary, "rows": rows}, f, indent=2)
-        with open(os.path.join(out_dir, "smoke_test.csv"), "w", newline="", encoding="utf-8") as f:
+        with open(os.path.join(out_dir, f"{stem}.csv"), "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=list(rows[0]))
             writer.writeheader()
             writer.writerows(rows)

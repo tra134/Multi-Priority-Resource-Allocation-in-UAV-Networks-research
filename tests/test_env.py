@@ -152,3 +152,38 @@ def test_reward_finite():
         assert np.isfinite(r)
         if terminated or truncated:
             obs, _ = env.reset(seed=0)
+
+
+def test_time_limit_is_truncation_not_termination():
+    """F16: reaching the episode length must not look like a terminal state."""
+    env = make_env()
+    env.reset(seed=0)
+    last = None
+    for _ in range(env.episode_slots):
+        last = env.step(env.action_space.sample())
+    _, _, terminated, truncated, _ = last
+    assert truncated is True
+    assert terminated is False
+
+
+def test_reward_depends_on_normal_throughput():
+    """F7: r_norm must change with the Normal rate (it used to be constant 1)."""
+    def reward_for(normal_share):
+        env = make_env()
+        env.reset(seed=3)
+        env.channel.update = lambda shadow_db=0.0: np.array([1e-13] * 3)  # weak: rate stays below the cap
+        env.traffic.arrivals_bits = lambda dt, multipliers=None: np.zeros(3)
+        # Same Emergency/Important shares in both runs; only Normal differs.
+        rest = (1.0 - normal_share) / 2.0
+        b = np.array([rest, rest, normal_share])
+        action = np.concatenate([np.log(b) / 3.0, np.log(b) / 3.0])
+        _, r, *_ = env.step(action)
+        return r
+
+    assert reward_for(0.8) != reward_for(0.05)
+
+
+def test_reward_references_follow_configured_load():
+    env = make_env()
+    assert env.R_norm_ref == 6.0e6          # normal_mean_mbps in the test config
+    assert env.R_target == 0.75 * 8.0e6     # 75% of the important load

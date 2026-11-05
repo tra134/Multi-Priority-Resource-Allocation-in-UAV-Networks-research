@@ -68,3 +68,14 @@ def test_checkpoint_run_name_matches_grid_layout():
     assert checkpoint_run_name("sac", 0, 10) == "sac_seed0_N10"
     assert checkpoint_run_name("sac", 3, 2, dr_wide=True) == \
         "sac_seed3_N2_drwide"
+
+
+def test_checkpoint_names_do_not_collide():
+    names = {
+        checkpoint_run_name("sac", 0, 10),
+        checkpoint_run_name("sac", 0, 10, mask_aware=True),
+        checkpoint_run_name("sac", 0, 2),
+        checkpoint_run_name("sac", 0, 2, dr_wide=True),
+    }
+    assert len(names) == 4
+    assert checkpoint_run_name("sac", 0, 10, mask_aware=True) == "sac_seed0_N10_mask"

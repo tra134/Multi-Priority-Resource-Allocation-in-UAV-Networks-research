@@ -1,0 +1,52 @@
+# Single source of truth for evaluation scenarios (finding F20).
+# Used by scripts/run_grid.py, scripts/train.py, scripts/calibrate_tau.py and
+# scripts/calibrate_theta.py through uavrl.env.scenarios.make_scenario().
+# Stage 2 of plan.md may change base conditions; slide-41 stress levels stay.
+#
+#   latency: nominal | stress   -> LLM latency model used with this scenario
+#   mode:    ground-truth operating mode, used ONLY to score LLM diagnoses
+scenarios:
+  S0:
+    name: nominal
+    ood: false
+    mode: NORMAL
+    latency: nominal
+    disturbance: {type: none}
+  S1:
+    name: surge
+    ood: true
+    mode: SOS_SURGE
+    latency: nominal
+    disturbance: {type: surge, surge_multiplier: 4.0, duration_slots: 400, start_slot: [500, 1200]}
+  S2:
+    name: shadow
+    ood: true
+    mode: DEEP_FADING
+    latency: nominal
+    disturbance: {type: shadow, extra_db: 15.0, duration_slots: 400, start_slot: [500, 1200]}
+  S3:
+    name: surge_stress
+    ood: true
+    mode: SOS_SURGE
+    latency: stress
+    disturbance: {type: surge, surge_multiplier: 4.0, duration_slots: 400, start_slot: [500, 1200]}
+  S4:
+    name: compound_stress
+    ood: true
+    mode: COMPOUND
+    latency: stress
+    disturbance: {type: compound, surge_multiplier: 4.0, shadow_db: 15.0, duration_slots: 400, start_slot: [500, 1200]}
+  S5:
+    name: unseen
+    ood: true
+    mode: COMPOUND
+    latency: nominal
+    disturbance: {type: compound, surge_multiplier: 8.0, shadow_db: 25.0, duration_slots: 400, start_slot: [500, 1200]}
+
+# Names used by scripts/train.py monitoring and scripts/calibrate_tau.py.
+aliases:
+  nominal: S0
+  surge: S1
+  shadow: S2
+  compound: S4
+  unseen: S5

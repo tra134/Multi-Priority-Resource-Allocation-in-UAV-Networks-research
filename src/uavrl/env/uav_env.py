@@ -24,7 +24,9 @@ Reward:
         - lambda_pen * 1[D_emg > D_th]
     r_emg = -clip(D_emg / D_th, 0, 5)^2
     r_imp = log(1 + min(R_imp / R_target, 1))
-    r_norm = R_norm / R_norm_ref
+    r_norm = min(R_norm / R_norm_ref, 1)
+    R_target defaults to 0.75 * important load and R_norm_ref to the Normal
+    load when not set in the config (F7).
 
 Scope limits (logged in docs/decision_log.md D7): fixed hover, single UAV, no
 inter-cell interference.  Battery is a simple drain model (obs feature only).
@@ -115,9 +117,15 @@ class UAVEnv(gym.Env):
         self.w_imp = float(rw.get("w_imp", 0.5))
         self.w_norm = float(rw.get("w_norm", 0.1))
         self.lambda_pen = float(rw.get("lambda_pen", 5.0))
-        self.R_target = float(rw.get("R_target", 6.0e6))
+        # F7: both references must follow the configured load.  The old
+        # defaults (R_target = 6 Mbps for a 35 Mbps class, R_norm_ref = None
+        # which made r_norm constant) removed the learning signal.
+        imp_mbps = float(tr.get("important_mean_mbps", 8.0))
+        norm_mbps = float(tr.get("normal_mean_mbps", 6.0))
+        rt = rw.get("R_target", None)
+        self.R_target = float(rt) if rt is not None else 0.75 * imp_mbps * 1e6
         rnf = rw.get("R_norm_ref", None)
-        self.R_norm_ref = float(rnf) if rnf is not None else None
+        self.R_norm_ref = float(rnf) if rnf is not None else norm_mbps * 1e6
 
         # ---- battery ----
         bt = self.config.get("battery", {})
@@ -273,6 +281,8 @@ class UAVEnv(gym.Env):
 
         # Queue update + drops (cap per class), scalar over the 3 classes.
         served = self.rates_bps * self.dt
+        # Bits actually delivered this slot: capacity cannot serve an empty queue (F8).
+        served_bits = np.minimum(self.queue_bits, served)
         new_queue = [
             max(0.0, float(self.queue_bits[k]) - float(served[k])) + float(arrivals[k])
             for k in range(3)
@@ -312,10 +322,8 @@ class UAVEnv(gym.Env):
         r_imp = float(
             math.log1p(min(self.rates_bps[1] / max(self.R_target, EPS), 1.0))
         )
-        if self.R_norm_ref is not None and self.R_norm_ref > 0:
-            r_norm = float(self.rates_bps[2] / self.R_norm_ref)
-        else:
-            r_norm = float(self.rates_bps[2] / max(self.rates_bps[2], EPS))
+        # Capped at 1: rate beyond the class's own demand is not useful service.
+        r_norm = float(min(self.rates_bps[2] / max(self.R_norm_ref, EPS), 1.0))
         reward = (
             self.w_emg * r_emg
             + self.w_imp * r_imp
@@ -326,8 +334,10 @@ class UAVEnv(gym.Env):
         self.prev_action = raw
         self._raw_action = raw.copy()
         self.slot += 1
-        terminated = self.slot >= self.episode_slots
-        truncated = False
+        # Hitting the episode length is a time limit, not a real terminal
+        # state (F16): the critic must keep bootstrapping through it.
+        terminated = False
+        truncated = self.slot >= self.episode_slots
 
         obs = self._get_obs()
         info = {
@@ -335,6 +345,11 @@ class UAVEnv(gym.Env):
             "rate_bps": self.rates_bps,
             "queue_bits": self.queue_bits,
             "drops_bits": self.drops_bits,
+            "served_bits": served_bits,
+            # Allocated shares; a measured check of the budget constraints.
+            "b_sum": float(sum(b_share)),
+            "p_sum": float(sum(p_share)),
+            "arrival_bits": np.asarray(arrivals, dtype=float),
             "los_state": self.channel.los_state,
             "emergency_violation": emg_violation,
             "ood_flag": self.ood_flag,

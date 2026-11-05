@@ -56,8 +56,8 @@ def test_ttl_out_of_range_rejected():
         LLMResponse(**p)
 
 
-def test_normal_power_floor_05():
+def test_no_boost_means_no_power_floor():
     p = valid_payload()
     p["power_boost_emergency"] = False
     r = LLMResponse(**p)
-    assert r.to_mask()["power_floor_emg"] == 0.5
+    assert r.to_mask()["power_floor_emg"] == 0.0

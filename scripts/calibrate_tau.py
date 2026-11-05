@@ -32,65 +32,23 @@ sys.path.insert(
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from uavrl.env.uav_env import UAVEnv
-from uavrl.env.scenarios import Scenario
+from uavrl.seeds import val_seed
+from uavrl.env.scenarios import make_scenario as registry_make_scenario
 from uavrl.agents.sac import SACAgent
 from uavrl.uncertainty.calibration import (
     collect_trajectory,
     normalize_U,
     percentile_U,
+    STARTUP_SLOTS,
     ood_metrics,
     auroc,
 )
 
-EVAL_SCENARIOS = {
-    "surge": {
-        "disturbance": {
-            "type": "surge",
-            "surge_multiplier": 4.0,
-            "duration_slots": 400,
-            "start_slot": [500, 1200],
-        },
-        "ood": True,
-    },
-    "shadow": {
-        "disturbance": {
-            "type": "shadow",
-            "extra_db": 15.0,
-            "duration_slots": 400,
-            "start_slot": [500, 1200],
-        },
-        "ood": True,
-    },
-    "compound": {
-        "disturbance": {
-            "type": "compound",
-            "surge_multiplier": 4.0,
-            "shadow_db": 15.0,
-            "duration_slots": 400,
-            "start_slot": [500, 1200],
-        },
-        "ood": True,
-    },
-    "unseen": {
-        "disturbance": {
-            "type": "compound",
-            "surge_multiplier": 8.0,
-            "shadow_db": 25.0,
-            "duration_slots": 400,
-            "start_slot": [500, 1200],
-        },
-        "ood": True,
-    },
-    "nominal": {
-        "disturbance": {"type": "none"},
-        "ood": False,
-    },
-}
+EVAL_SCENARIOS = ["surge", "shadow", "compound", "unseen", "nominal"]
 
 
 def make_scenario(name, rng):
-    spec = EVAL_SCENARIOS[name]
-    return Scenario(name, spec["disturbance"], ood=spec["ood"], rng=rng)
+    return registry_make_scenario(name, rng)
 
 
 def main():
@@ -101,6 +59,8 @@ def main():
     parser.add_argument("--config", default="configs/default.yaml")
     parser.add_argument("--quantile", type=float, default=99.0)
     parser.add_argument("--n-val", type=int, default=50)
+    parser.add_argument("--skip-slots", type=int, default=STARTUP_SLOTS,
+                        help="ignore the startup transient when calibrating (F15)")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", default="results/phase5")
     args = parser.parse_args()
@@ -123,34 +83,36 @@ def main():
         print("WARNING: no checkpoint -- using untrained agent (illustrative)")
 
     # ---- in-distribution calibration (nominal, no domain randomization) ----
-    val_env = UAVEnv(config=cfg, seed=args.seed + 1)
+    val_env = UAVEnv(config=cfg, seed=val_seed(0))
     val_trajs = []
     for i in range(args.n_val):
-        traj = collect_trajectory(val_env, agent, deterministic=True)
+        traj = collect_trajectory(val_env, agent, deterministic=True, seed=val_seed(i))
         val_trajs.append(traj)
 
     for traj in val_trajs:
         for r in traj:
             r["U_norm"] = r["U"] / (abs(r["meanQ"]) + 1.0)
 
-    tau_raw = percentile_U(val_trajs, q=args.quantile, normalized=False)
-    tau_norm = percentile_U(val_trajs, q=args.quantile, normalized=True)
+    tau_raw = percentile_U(val_trajs, q=args.quantile, normalized=False,
+                           skip_slots=args.skip_slots)
+    tau_norm = percentile_U(val_trajs, q=args.quantile, normalized=True,
+                            skip_slots=args.skip_slots)
     print(f"tau_unc (raw U, {args.quantile}th pct) = {tau_raw:.4f}")
     print(f"tau_unc (norm U, {args.quantile}th pct) = {tau_norm:.4f}")
 
     # ---- OOD evaluation ----
     results = {}
-    for sname, spec in EVAL_SCENARIOS.items():
+    for sname in EVAL_SCENARIOS:
         env = UAVEnv(
             config=cfg,
-            scenario=make_scenario(sname, np.random.default_rng(args.seed + 100)),
-            seed=args.seed + 200,
+            scenario=make_scenario(sname, np.random.default_rng(val_seed(5000))),
+            seed=val_seed(5000),
         )
-        traj = collect_trajectory(env, agent, deterministic=True)
+        traj = collect_trajectory(env, agent, deterministic=True, seed=val_seed(5000))
         for r in traj:
             r["U_norm"] = r["U"] / (abs(r["meanQ"]) + 1.0)
-        m_raw = ood_metrics(traj, tau_raw, normalized=False)
-        m_norm = ood_metrics(traj, tau_norm, normalized=True)
+        m_raw = ood_metrics(traj, tau_raw, normalized=False, skip_slots=args.skip_slots)
+        m_norm = ood_metrics(traj, tau_norm, normalized=True, skip_slots=args.skip_slots)
         results[sname] = {
             "auroc_raw": auroc(m_raw["U"], m_raw["ood"].astype(int)),
             "auroc_norm": auroc(m_norm["U"], m_norm["ood"].astype(int)),

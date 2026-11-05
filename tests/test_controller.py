@@ -85,9 +85,9 @@ def test_timeout_fallback():
                             latency_median_ms=350.0, timeout_ms=100,
                             cooldown=0)
     steps, summary = ctrl.run_episode(seed=0)
-    # every call fails (p_timeout=1) -> fallback, zero valid masks
+    # every call times out (p_timeout=1) -> fallback, zero valid masks
     assert summary["llm_valid"] == 0
-    assert summary["llm_invalid"] == summary["llm_calls"]
+    assert summary["llm_timeouts"] == summary["llm_calls"]
     assert summary["fallback_active_fraction"] > 0.0
     print("timeout:", summary)
 
@@ -99,7 +99,9 @@ def test_invalid_json_fallback():
                             failure={"p_invalid_json": 1.0}, seed=7)
     steps, summary = ctrl.run_episode(seed=0)
     assert summary["llm_valid"] == 0
-    assert summary["llm_invalid"] == summary["llm_calls"]
+    # Slow replies (> timeout_ms) are timeouts, the rest are invalid replies.
+    assert summary["llm_invalid"] + summary["llm_timeouts"] == summary["llm_calls"]
+    assert summary["llm_invalid"] > 0
     print("invalid_json:", summary)
 
 
@@ -167,7 +169,7 @@ def test_call_log_matches_counters():
             assert entry["mode"] in {"NORMAL", "SOS_SURGE", "DEEP_FADING",
                                      "COMPOUND"}
     valid = sum(1 for e in ctrl.call_log if e["ok"])
-    invalid = sum(1 for e in ctrl.call_log if not e["ok"])
+    invalid = sum(1 for e in ctrl.call_log if not e["ok"] and not e["timeout"])
     timeouts = sum(1 for e in ctrl.call_log if e["timeout"])
     # A response still in flight when the episode ends is a valid call but was
     # never applied, so the applied counter can only be lower.
@@ -198,3 +200,160 @@ def test_interim_fallback_fills_latency_window():
     # Responses still arrive and install valid masks; they are preempted by the
     # interim fallback only while the next response is in flight.
     assert interim["llm_valid"] > 0
+
+
+# ---------------------------------------------------------------- stage 1 fixes
+from uavrl.llm.latency import LatencyModel  # noqa: E402
+
+_GOOD = {
+    "operating_mode": "SOS_SURGE",
+    "min_bandwidth_ratio": {"emergency": 0.6, "important": 0.2, "normal": 0.15},
+    "power_boost_emergency": True,
+    "ttl_duration_slots": 100,
+}
+
+
+class _FixedClient:
+    """Returns one scripted reply with a fixed reported latency."""
+
+    def __init__(self, resp, latency_ms, ok, reason):
+        self.args = (resp, latency_ms, ok, reason)
+
+    def call(self, prompt, features=None):
+        return self.args
+
+
+def _ctrl(client, env, agent, **kw):
+    params = dict(trigger_mode="periodic", periodic_K=10_000, cooldown=0,
+                  timeout_ms=1000, fallback_slots=50, ttl_slots=100,
+                  rng=np.random.default_rng(0))
+    params.update(kw)
+    return HybridController(agent, env, client, env.config, **params)
+
+
+def _first(steps, key):
+    return next(s["slot"] for s in steps if s[key])
+
+
+def test_timeout_fallback_starts_only_after_timeout_elapses():
+    """F5: a timeout is known after timeout_ms (1000 ms = 200 slots), not at call time."""
+    env, _ = _make_env(seed=0)
+    ctrl = _ctrl(_FixedClient(None, 5000.0, False, "timeout"), env, _make_agent())
+    steps, _ = ctrl.run_episode(seed=0)
+    assert _first(steps, "fallback_active") == 200
+    assert sum(s["fallback_active"] for s in steps) == 50
+
+
+def test_invalid_reply_fallback_starts_when_reply_arrives():
+    """F5: an invalid reply is known when it arrives (300 ms = 60 slots)."""
+    env, _ = _make_env(seed=0)
+    ctrl = _ctrl(_FixedClient(None, 300.0, False, "invalid_json"), env, _make_agent())
+    steps, _ = ctrl.run_episode(seed=0)
+    assert _first(steps, "fallback_active") == 60
+
+
+def test_cache_hit_still_pays_simulated_latency():
+    """F13: a cache hit reports 0 ms but the mask must still arrive after the model latency."""
+    env, _ = _make_env(seed=0)
+    client = _FixedClient(dict(_GOOD), 0.0, True, "cache")
+    ctrl = _ctrl(client, env, _make_agent(),
+                 latency_model=LatencyModel(median_ms=500.0, sigma=0.0))
+    steps, _ = ctrl.run_episode(seed=0)
+    assert _first(steps, "mask_active") == 100  # 500 ms / 5 ms
+    assert np.isnan(ctrl.call_log[0]["measured_latency_ms"])
+
+
+def test_fitted_latency_overrides_measured_latency():
+    env, _ = _make_env(seed=0)
+    client = _FixedClient(dict(_GOOD), 5.0, True, "ok")  # wall clock says 5 ms
+    ctrl = _ctrl(client, env, _make_agent(), use_fitted_latency=True,
+                 latency_model=LatencyModel(median_ms=250.0, sigma=0.0))
+    steps, _ = ctrl.run_episode(seed=0)
+    assert _first(steps, "mask_active") == 50
+    assert ctrl.call_log[0]["measured_latency_ms"] == 5.0
+
+
+def test_controller_uses_deterministic_actor_by_default():
+    """F4: LLM methods must use the same deterministic actor as M3-M5."""
+    env, _ = _make_env(seed=0)
+    agent = _make_agent()
+    seen = []
+    original = agent.select_action
+
+    def spy(obs, deterministic=False):
+        seen.append(deterministic)
+        return original(obs, deterministic=deterministic)
+
+    agent.select_action = spy
+    ctrl = _make_controller(env, agent, trigger_mode="queue", theta_queue=1e12)
+    ctrl.run_episode(seed=0)
+    assert seen and all(seen)
+
+
+def test_csi_window_is_updated_every_slot():
+    """F6: the '50-slot window' must cover 50 slots, not the last 50 calls."""
+    env, _ = _make_env(seed=0)
+    ctrl = _make_controller(env, _make_agent(), trigger_mode="queue", theta_queue=1e12)
+    ctrl.run_episode(seed=0)
+    assert ctrl.calls == 0
+    assert len(ctrl.csi_hist) == 50
+
+    env, _ = _make_env(seed=0)
+    ctrl = _ctrl(_FixedClient(dict(_GOOD), 50.0, True, "ok"), env, _make_agent(),
+                 periodic_K=30)
+    seen = {}
+    original = ctrl._build_features
+
+    def spy(obs, info, reason):
+        seen[ctrl.slot] = len(ctrl.csi_hist)
+        return original(obs, info, reason)
+
+    ctrl._build_features = spy
+    ctrl.run_episode(seed=0)
+    assert seen[0] == 1 and seen[30] == 31 and seen[60] == 50
+
+
+def _csi_means(scenario, seeds=(0, 1, 2, 3)):
+    out = []
+    for s in seeds:
+        env, _ = _make_env(seed=s)
+        env.scenario = scenario
+        ctrl = _ctrl(_FixedClient(dict(_GOOD), 50.0, True, "ok"), env, _make_agent(),
+                     periodic_K=100)
+        feats = []
+        original = ctrl._build_features
+
+        def spy(obs, info, reason, _o=original, _f=feats):
+            f = _o(obs, info, reason)
+            _f.append(f)
+            return f
+
+        ctrl._build_features = spy
+        ctrl.run_episode(seed=s)
+        out.append(np.mean([f["csi_emergency_mean"] for f in feats[1:]]))
+    return float(np.median(out))
+
+
+def test_csi_in_prompt_is_normalized_to_nominal_one():
+    """F21: raw gain (~1e-10) was shown to the LLM as 'normalized, nominal 1.0'."""
+    nominal = _csi_means(None)
+    shadowed = _csi_means(Scenario(
+        "shadow", {"type": "shadow", "extra_db": 15.0, "duration_slots": 400,
+                   "start_slot": 0}, ood=True))
+    # Scale is O(1)-O(10), not O(1e-10) as with raw gain.  The LoS/NLoS switch
+    # (19 dB) means the absolute level varies, so test the relative drop: a
+    # 15 dB shadow (31x in power) must be clearly visible.
+    assert 0.1 < nominal < 100.0, nominal
+    assert shadowed < nominal / 10.0, (shadowed, nominal)
+
+
+def test_mock_reaches_fading_modes_through_the_real_controller():
+    """F3: through the controller, shadowing must yield non-surge diagnoses."""
+    env, _ = _make_env(seed=2)
+    env.scenario = Scenario("shadow", {"type": "shadow", "extra_db": 15.0,
+                                       "duration_slots": 400, "start_slot": 0}, ood=True)
+    ctrl = _make_controller(env, _make_agent(), trigger_mode="queue",
+                            theta_queue=1000.0, cooldown=10, seed=3)
+    ctrl.run_episode(seed=2)
+    modes = {c["mode"] for c in ctrl.call_log if c["mode"]}
+    assert modes & {"DEEP_FADING", "COMPOUND"}, modes

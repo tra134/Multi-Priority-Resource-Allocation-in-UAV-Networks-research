@@ -61,7 +61,8 @@ class LLMResponse(BaseModel):
                 self.min_bandwidth_ratio.important,
                 self.min_bandwidth_ratio.normal,
             ],
-            "power_floor_emg": 0.7 if self.power_boost_emergency else 0.5,
+            # No boost requested -> no power floor (F18: 0.5 was forced before).
+            "power_floor_emg": 0.7 if self.power_boost_emergency else 0.0,
             "ttl_slots": self.ttl_duration_slots,
         }
 

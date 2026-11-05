@@ -1,6 +1,13 @@
 # UAV Multi-Priority Resource Allocation - default configuration
 # See plan.md Section 4 (Default parameters). Deviations are logged in docs/decision_log.md.
 
+meta:
+  # Stage 2 of plan.md is undecided (docs/stage2_scenario_calibration.md).
+  # scripts/train.py refuses to train while env_frozen is false, so a long
+  # Colab run cannot start on an environment that may still change.
+  env_version: pending
+  env_frozen: false
+
 timing:
   slot_ms: 5
   episode_slots: 2000
@@ -45,8 +52,8 @@ reward:
   w_imp: 0.5
   w_norm: 0.1
   lambda_pen: 5.0
-  R_target: 6.0e6               # Important target rate [bps]
-  R_norm_ref: null              # set at calibration (nominal capacity share)
+  R_target: 26.25e6             # Important target rate [bps] = 0.75 x 35 Mbps load (F7; provisional, Stage 2 may revise)
+  R_norm_ref: 28.0e6            # Normal reference rate [bps] = nominal Normal load (F7; provisional)
 
 sac:
   N_critics: 10                 # REDQ-style ensemble (ablate 1, 2, 5, 10)
@@ -59,8 +66,8 @@ sac:
   G: 1                          # update-to-data ratio
 
 trigger:
-  tau_unc: 0.2601170632243155  # Phase 5, 99th pct of U on nominal val (sac_seed0_N10)
-  theta_queue: 20000.0          # Phase 9 sweep: SOS 1.87% at 1.04% calls (best trade-off)
+  tau_unc: 0.2601170632243155  # STALE (old checkpoint, old env): recalibrate in Stage 5 before use
+  theta_queue: 20000.0          # STALE (old checkpoint, old env): re-sweep in Stage 5 before use
   debounce_m: 3
   cooldown: 50                  # slots (= 250 ms)
   ttl_slots: 600                # LLM mask TTL (= 3 s)

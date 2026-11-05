@@ -42,65 +42,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from uavrl.agents.replay import ReplayBuffer
 from uavrl.agents.sac import SACAgent
 from uavrl.config import checkpoint_run_name
-from uavrl.env.scenarios import Scenario
+from uavrl.control.mask import RandomMaskSampler
+from uavrl.env.scenarios import make_scenario as registry_make_scenario
 from uavrl.env.uav_env import UAVEnv
 from uavrl.eval.runner import run_episode
+from uavrl.seeds import monitor_seed, train_reset_seed
 
 # --------------------------------------------------------------------------- scenario helpers
-EVAL_SCENARIOS = {
-    "nominal": {
-        "disturbance": {"type": "none"},
-        "ood": False,
-    },
-    "surge": {
-        "disturbance": {
-            "type": "surge",
-            "surge_multiplier": 4.0,
-            "duration_slots": 400,
-            "start_slot": [500, 1200],
-        },
-        "ood": True,
-    },
-    "shadow": {
-        "disturbance": {
-            "type": "shadow",
-            "extra_db": 15.0,
-            "duration_slots": 400,
-            "start_slot": [500, 1200],
-        },
-        "ood": True,
-    },
-    "compound": {
-        "disturbance": {
-            "type": "compound",
-            "surge_multiplier": 4.0,
-            "shadow_db": 15.0,
-            "duration_slots": 400,
-            "start_slot": [500, 1200],
-        },
-        "ood": True,
-    },
-    "unseen": {
-        "disturbance": {
-            "type": "compound",
-            "surge_multiplier": 8.0,
-            "shadow_db": 25.0,
-            "duration_slots": 400,
-            "start_slot": [500, 1200],
-        },
-        "ood": True,
-    },
-}
+# Definitions live in configs/scenarios.yaml (finding F20).
+EVAL_SCENARIOS = ["nominal", "surge", "shadow", "compound", "unseen"]
 
 
 def make_scenario(name, rng):
-    spec = EVAL_SCENARIOS[name]
-    return Scenario(name, spec["disturbance"], ood=spec["ood"], rng=rng)
+    return registry_make_scenario(name, rng)
 
 
 # --------------------------------------------------------------------------- evaluation
-def evaluate(agent, env_cfg, scenario_name, n_episodes=20, seed0=10000):
+def evaluate(agent, env_cfg, scenario_name, n_episodes=20, seed0=None):
     """Run n_episodes on a scenario with DETERMINISTIC actions; return metrics."""
+    seed0 = monitor_seed(0) if seed0 is None else seed0
     scenario = make_scenario(scenario_name, np.random.default_rng(seed0))
     env = UAVEnv(config=env_cfg, scenario=scenario, seed=seed0)
     summaries = []
@@ -132,6 +92,13 @@ def main():
                         help="override sac.N_critics (2 = Pure SAC, 10 = REDQ-SAC)")
     parser.add_argument("--dr-wide", action="store_true",
                         help="DR-SAC baseline: surge up to 3x, shadow up to +10 dB")
+    parser.add_argument("--allow-unfrozen", action="store_true",
+                        help="train although meta.env_frozen is false (tests and dev only)")
+    parser.add_argument("--mask-aware", action="store_true",
+                        help="train with random safety masks (decision D5, F11); "
+                             "writes a *_mask checkpoint")
+    parser.add_argument("--mask-prob", type=float, default=0.3,
+                        help="share of training episodes that contain a mask window")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--steps", type=int, default=300000)
     parser.add_argument("--ckpt-dir", default="results/ckpt")
@@ -145,6 +112,16 @@ def main():
 
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
+
+    meta = cfg.get("meta", {})
+    if not meta.get("env_frozen", False) and not args.allow_unfrozen:
+        raise SystemExit(
+            "Refusing to train: meta.env_frozen is false in "
+            f"{args.config} (env_version={meta.get('env_version')!r}). The "
+            "environment and reward are not frozen yet (plan.md Stage 2/3), so "
+            "checkpoints trained now would have to be thrown away. Use "
+            "--allow-unfrozen only for tests."
+        )
 
     # ---- DR-SAC baseline (M5): wider domain randomization during training
     if args.dr_wide:
@@ -190,7 +167,7 @@ def main():
     )
 
     run_name = checkpoint_run_name(args.agent, args.seed, n_critics,
-                                   args.dr_wide)
+                                   args.dr_wide, mask_aware=args.mask_aware)
     start_step = 1
     if args.resume:
         ckpt = os.path.join(args.ckpt_dir, f"{run_name}_latest.pt")
@@ -227,10 +204,17 @@ def main():
     )
 
     # ---- training loop
-    obs, _ = train_env.reset(seed=args.seed + start_step)
+    episode_counter = start_step // max(int(cfg.get("timing", {}).get("episode_slots", 2000)), 1)
+    obs, _ = train_env.reset(seed=train_reset_seed(args.seed, episode_counter))
     train_env.randomize_episode(rng, dr_cfg)
     ep_ret = 0.0
     ep_len = 0
+    mask_sampler = RandomMaskSampler(
+        prob=args.mask_prob if args.mask_aware else 0.0,
+        episode_slots=int(cfg.get("timing", {}).get("episode_slots", 2000)),
+        rng=np.random.default_rng(args.seed + 7919),
+    )
+    mask_sampler.new_episode()
     t0 = time.time()
     if start_step > 1:
         print(f"[resume] replay buffer is rebuilt from step {start_step}; "
@@ -238,9 +222,13 @@ def main():
 
     for step in range(start_step, args.steps + 1):
         action = agent.select_action(obs, deterministic=False)
-        next_obs, reward, terminated, truncated, info = train_env.step(action)
+        # The policy's raw action is what gets stored; the environment runs the
+        # masked one, so the policy learns the dynamics it will meet with masks.
+        next_obs, reward, terminated, truncated, info = train_env.step(
+            mask_sampler.apply(ep_len, action)
+        )
         replay_buffer.store(
-            obs, action, reward, next_obs, float(terminated or truncated)
+            obs, action, reward, next_obs, float(terminated)  # time limit is not terminal (F16)
         )
 
         obs = next_obs
@@ -257,8 +245,10 @@ def main():
         if terminated or truncated:
             tb.add_scalar("train/ep_return", ep_ret, step)
             tb.add_scalar("train/ep_len", ep_len, step)
-            obs, _ = train_env.reset(seed=args.seed + step)
+            episode_counter += 1
+            obs, _ = train_env.reset(seed=train_reset_seed(args.seed, episode_counter))
             train_env.randomize_episode(rng, dr_cfg)
+            mask_sampler.new_episode()
             ep_ret = 0.0
             ep_len = 0
 
@@ -267,7 +257,7 @@ def main():
             for sname in EVAL_SCENARIOS:
                 metrics = evaluate(
                     agent, eval_env_cfg, sname,
-                    n_episodes=args.eval_episodes, seed0=10000 + step,
+                    n_episodes=args.eval_episodes, seed0=monitor_seed(0),
                 )
                 for k, v in metrics.items():
                     tb.add_scalar(f"eval/{k}", v, step)
@@ -275,7 +265,7 @@ def main():
             for s in ["nominal", "surge", "shadow"]:
                 m = evaluate(
                     agent, eval_env_cfg, s,
-                    n_episodes=5, seed0=99999,
+                    n_episodes=5, seed0=monitor_seed(1000),
                 )
                 sos[s] = m[f"{s}/mean_sos_violation_rate"]
             print(

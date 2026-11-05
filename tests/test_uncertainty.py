@@ -5,11 +5,11 @@ from __future__ import annotations
 import numpy as np
 
 from uavrl.uncertainty.calibration import (
+    auroc,
     collect_trajectory,
     normalize_U,
-    percentile_U,
     ood_metrics,
-    auroc,
+    percentile_U,
 )
 
 
@@ -90,3 +90,29 @@ def test_collect_trajectory_runs(monkeypatch):
     rows = collect_trajectory(FakeEnv(), FakeAgent(), deterministic=True)
     assert len(rows) == 3
     assert all(r["U"] == 0.5 for r in rows)
+
+
+def _traj(us, ood, delays):
+    return [{"U": u, "U_norm": u, "meanQ": 1.0, "ood_flag": o, "delay_emg_s": d,
+             "queue_emg_bits": 0.0, "reward": 0.0, "slot": i}
+            for i, (u, o, d) in enumerate(zip(us, ood, delays, strict=True))]
+
+
+def test_startup_slots_are_skipped_in_calibration():
+    """F15: the first trigger used to fire near slot 3, giving lead time -497 everywhere."""
+    us = [9.0] * 5 + [0.1] * 95
+    trajs = [_traj(us, [False] * 100, [0.001] * 100)]
+    assert percentile_U(trajs, q=99.0, skip_slots=0) > 1.0
+    assert percentile_U(trajs, q=99.0, skip_slots=10) < 1.0
+
+
+def test_early_startup_trigger_does_not_distort_lead_time():
+    us = [9.0] * 5 + [0.1] * 95 + [0.9] * 20 + [0.1] * 80   # startup spike, then a real rise at 100
+    ood = [False] * 100 + [True] * 50 + [False] * 50
+    delay = [0.001] * 110 + [0.05] * 40 + [0.001] * 50      # first violation at slot 110
+    m = ood_metrics(_traj(us, ood, delay), tau=0.5, skip_slots=50)
+    assert m["first_trigger"] == 100
+    assert m["lead_time"] == -10          # warned 10 slots before damage
+    assert m["detection_delay"] == 0
+    # without skipping, the startup spike is outside the window and still ignored
+    assert ood_metrics(_traj(us, ood, delay), tau=0.5)["first_trigger"] == 100

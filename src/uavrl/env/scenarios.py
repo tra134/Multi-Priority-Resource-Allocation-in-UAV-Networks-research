@@ -2,7 +2,7 @@
 
 A scenario modifies the environment at a start slot for a duration:
 traffic surge (rate multiplier), deep shadowing (extra dB), and combinations.
-Scenario configuration comes from YAML (see configs/scenarios/).  The
+Scenario configuration comes from configs/scenarios.yaml (see make_scenario).  The
 ``info["ood_flag"]`` produced by the environment is the ground-truth OOD label
 (metrics only -- never in the observation or the LLM prompt).
 """
@@ -78,3 +78,46 @@ class Scenario:
             return None
         v = self.disturbance.get("latency_median_ms", None)
         return None if v is None else float(v)
+
+
+# --------------------------------------------------------------------------- registry
+def load_scenario_specs(path=None):
+    """Read configs/scenarios.yaml -> (specs, aliases)."""
+    from pathlib import Path
+
+    import yaml
+
+    from ..config import find_project_root
+
+    path = Path(path) if path else find_project_root() / "configs" / "scenarios.yaml"
+    with open(path, encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    return data["scenarios"], data.get("aliases", {})
+
+
+def resolve_scenario_id(key, specs, aliases):
+    """Accept an id (S1), a name (surge_stress) or an alias (compound)."""
+    if key in specs:
+        return key
+    if key in aliases:
+        return aliases[key]
+    for sid, spec in specs.items():
+        if spec.get("name") == key:
+            return sid
+    raise KeyError(f"unknown scenario {key!r}; known: {sorted(specs)}")
+
+
+def scenario_spec(key, path=None):
+    specs, aliases = load_scenario_specs(path)
+    sid = resolve_scenario_id(key, specs, aliases)
+    return sid, specs[sid]
+
+
+def make_scenario(key, seed_or_rng=None, path=None):
+    """Build a Scenario from the registry.  ``seed_or_rng`` seeds the start slot."""
+    sid, spec = scenario_spec(key, path)
+    if isinstance(seed_or_rng, np.random.Generator):
+        rng = seed_or_rng
+    else:
+        rng = np.random.default_rng(seed_or_rng)
+    return Scenario(spec["name"], dict(spec["disturbance"]), ood=bool(spec["ood"]), rng=rng)

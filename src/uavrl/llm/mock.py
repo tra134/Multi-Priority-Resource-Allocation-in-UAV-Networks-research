@@ -97,19 +97,25 @@ class MockLLM:
 
         return response, latency_ms, True, "ok"
 
+    # Thresholds mirror the diagnosis guide in llm/prompt.py.  The mock reads
+    # only features the real prompt contains (F3); it never sees ground truth.
+    CSI_FADING = 0.1            # normalized CSI mean below this = deep fading
+    QUEUE_ACTIVE_BITS = 1.0e4   # Emergency queue large enough to matter
+    STRONG_GROWTH_BITS = 2.0e4  # dQ_emg per slot that signals a surge on top of fading
+
     def _diagnose(self, features):
         dQ = float(features.get("dQ_emg", 0.0))
         q_emg = float(features.get("queue_emg_bits", 0.0))
-        csi = float(features.get("csi_emg", 1.0))
-        shadow = float(features.get("shadow_db", 0.0))
+        csi = min(
+            float(features.get(f"csi_{cls}_mean", 1.0))
+            for cls in ("emergency", "important", "normal")
+        )
 
-        # Deep fading / compound: low CSI or high shadow
-        if shadow > 10.0 or csi < 0.2:
-            if dQ > 0:
+        if csi < self.CSI_FADING:
+            if dQ > self.STRONG_GROWTH_BITS:
                 return "COMPOUND", np.array([0.65, 0.18, 0.12]), True
             return "DEEP_FADING", np.array([0.6, 0.2, 0.15]), True
-        # SOS surge: Emergency queue growing fast
-        if dQ > 0.0 or q_emg > 5e5:
+        if dQ > 0.0 and q_emg > self.QUEUE_ACTIVE_BITS:
             return "SOS_SURGE", np.array([0.6, 0.2, 0.15]), True
         return "NORMAL", np.array([0.2, 0.4, 0.35]), False
 
