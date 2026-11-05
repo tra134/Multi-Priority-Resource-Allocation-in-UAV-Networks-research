@@ -187,3 +187,98 @@ def test_reward_references_follow_configured_load():
     env = make_env()
     assert env.R_norm_ref == 6.0e6          # normal_mean_mbps in the test config
     assert env.R_target == 0.75 * 8.0e6     # 75% of the important load
+
+
+# ---------------------------------------------------------------- Stage 2, task 1.2
+import importlib.util  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import yaml  # noqa: E402
+
+from uavrl.env.scenarios import make_scenario  # noqa: E402
+
+_ROOT = Path(__file__).resolve().parents[1]
+# Reward block pinned here on purpose: a later, logged reward retune must not
+# invalidate this test, which only guards that logging does not alter the dynamics.
+_PINNED_REWARD = {"w_emg": 1.0, "w_imp": 0.5, "w_norm": 0.1, "lambda_pen": 5.0,
+                  "R_target": 26.25e6, "R_norm_ref": 28.0e6}
+# Recorded with the code BEFORE the logging fields were added.
+_GOLDEN = {
+    "S0": {
+        "reward_sum": -1030.2589484661505,
+        "reward_last": 0.11852084542241226,
+        "queue_sum": 17983640.97508584,
+        "delay_sum": 8.82209793085076,
+        "obs_sum": 9.657426834106445
+    },
+    "S1": {
+        "reward_sum": -3441.664220079598,
+        "reward_last": 0.12231102665355656,
+        "queue_sum": 48917659.707874,
+        "delay_sum": 21.664184551760215,
+        "obs_sum": 9.620977401733398
+    },
+    "S4": {
+        "reward_sum": -10675.963767295338,
+        "reward_last": 0.12231102665355656,
+        "queue_sum": 453780923.66395885,
+        "delay_sum": 180.8452414404219,
+        "obs_sum": 9.620977401733398
+    }
+}
+
+
+def _golden_cfg():
+    cfg = yaml.safe_load((_ROOT / "configs" / "default.yaml").read_text())
+    cfg["reward"] = dict(_PINNED_REWARD)
+    cfg["traffic"] = {**cfg["traffic"], "emergency_mean_mbps": 2.0,
+                      "important_mean_mbps": 35.0, "normal_mean_mbps": 28.0}
+    return cfg
+
+
+def test_logging_does_not_change_rewards_or_dynamics():
+    cfg = _golden_cfg()
+    for sid, want in _GOLDEN.items():
+        env = UAVEnv(config=cfg, scenario=make_scenario(sid, 12345), seed=12345)
+        env.reset(seed=12345)
+        rng = np.random.default_rng(7)
+        rewards, queues, delays = [], [], []
+        for _ in range(1600):
+            obs, r, _, _, info = env.step(rng.uniform(-1, 1, 6))
+            rewards.append(r)
+            queues.append(float(info["queue_bits"][0]))
+            delays.append(float(info["delay_s"][0]))
+        assert np.sum(rewards) == pytest.approx(want["reward_sum"], rel=1e-9), sid
+        assert rewards[-1] == pytest.approx(want["reward_last"], rel=1e-9), sid
+        assert np.sum(queues) == pytest.approx(want["queue_sum"], rel=1e-9), sid
+        assert np.sum(delays) == pytest.approx(want["delay_sum"], rel=1e-9), sid
+        assert np.sum(obs) == pytest.approx(want["obs_sum"], rel=1e-6), sid
+
+
+def test_logged_reward_terms_recombine_to_the_reward():
+    env = make_env()
+    env.reset(seed=1)
+    c = env.config["reward"]
+    for _ in range(50):
+        _, r, _, _, info = env.step(env.action_space.sample())
+        t = info["reward_terms"]
+        assert r == pytest.approx(
+            c["w_emg"] * t["r_emg"] + c["w_imp"] * t["r_imp"] + c["w_norm"] * t["r_norm"]
+            - t["penalty"], rel=1e-9, abs=1e-12)
+        assert abs(sum(info["b_share"]) - 1.0) < 1e-9 and abs(sum(info["p_share"]) - 1.0) < 1e-9
+
+
+def test_new_metric_columns_exist_in_the_grid_schema():
+    spec = importlib.util.spec_from_file_location("rg", _ROOT / "scripts" / "run_grid.py")
+    rg = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rg)
+    from uavrl.eval.metrics import episode_metrics
+    from uavrl.eval.runner import run_episode
+
+    env = make_env()
+    steps, _ = run_episode(env, lambda o, i: np.zeros(6), seed=0)
+    m = episode_metrics(steps)
+    for col in ("mean_b_share_emg", "mean_p_share_emg", "mean_r_emg", "mean_r_imp",
+                "mean_r_norm", "mean_penalty"):
+        assert col in m and col in rg.FIELDS, col
+    assert abs(m["mean_b_share_emg"] - 1.0 / 3.0) < 1e-9     # zero action = equal shares

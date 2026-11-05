@@ -137,6 +137,8 @@ FIELDS = [
     "delivered_emg_mbps", "delivered_imp_mbps", "delivered_norm_mbps",
     "delivered_imp_ood_mbps", "delivered_norm_ood_mbps",
     "loss_ratio_emg", "total_drops_emg_bits", "n_events",
+    "mean_b_share_emg", "mean_p_share_emg",
+    "mean_r_emg", "mean_r_imp", "mean_r_norm", "mean_penalty",
     "llm_calls", "llm_call_rate", "llm_valid", "llm_invalid", "llm_timeouts",
     "mask_active_fraction", "fallback_active_fraction", "trigger_fraction",
     "json_valid_rate", "timeout_rate",

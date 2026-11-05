@@ -2,11 +2,13 @@
 # See plan.md Section 4 (Default parameters). Deviations are logged in docs/decision_log.md.
 
 meta:
-  # Stage 2 of plan.md is undecided (docs/stage2_scenario_calibration.md).
-  # scripts/train.py refuses to train while env_frozen is false, so a long
-  # Colab run cannot start on an environment that may still change.
-  env_version: pending
-  env_frozen: false
+  # Stage 2 of plan.md is decided (comparator N, docs/stage2_scenario_calibration.md,
+  # trialAndError.md TE-015/TE-016).  Environment frozen as env-v2: do not change
+  # traffic, channel, scenarios or timing without a new version and a log entry.
+  # The reward may still change ONCE after the Stage 3 pilot (then env-v2.1, reward-v2).
+  # scripts/train.py refuses to train while env_frozen is false.
+  env_version: env-v2
+  env_frozen: true
 
 timing:
   slot_ms: 5

@@ -136,6 +136,14 @@ def episode_metrics(steps, slot_ms=5.0, recovery=RECOVERY_SLOTS):
         "loss_ratio_emg": dropped / arrived if arrived > 0 else NAN,
         "total_drops_emg_bits": dropped,
         "n_events": len(events),
+        # Stage 3: does the policy over-reserve for Emergency, and which reward
+        # terms drive learning?  Logged only; they never change the reward.
+        "mean_b_share_emg": _mean([s["b_share_emg"] for s in steps if "b_share_emg" in s]),
+        "mean_p_share_emg": _mean([s["p_share_emg"] for s in steps if "p_share_emg" in s]),
+        "mean_r_emg": _mean([s["r_emg"] for s in steps if "r_emg" in s]),
+        "mean_r_imp": _mean([s["r_imp"] for s in steps if "r_imp" in s]),
+        "mean_r_norm": _mean([s["r_norm"] for s in steps if "r_norm" in s]),
+        "mean_penalty": _mean([s["penalty"] for s in steps if "penalty" in s]),
         # Measured: allocated shares must never exceed the B_max / P_max budgets.
         "budget_violation_count": int(sum(
             (s.get("b_sum", 1.0) > 1.0 + 1e-6) or (s.get("p_sum", 1.0) > 1.0 + 1e-6)

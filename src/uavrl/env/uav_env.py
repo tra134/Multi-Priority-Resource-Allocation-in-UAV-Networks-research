@@ -349,6 +349,16 @@ class UAVEnv(gym.Env):
             # Allocated shares; a measured check of the budget constraints.
             "b_sum": float(sum(b_share)),
             "p_sum": float(sum(p_share)),
+            # Logging only (Stage 2, task 1.2): what the policy allocated and
+            # which reward terms it received.  Nothing here feeds back.
+            "b_share": [float(x) for x in b_share],
+            "p_share": [float(x) for x in p_share],
+            "reward_terms": {
+                "r_emg": float(r_emg),
+                "r_imp": float(r_imp),
+                "r_norm": float(r_norm),
+                "penalty": float(self.lambda_pen * float(emg_violation)),
+            },
             "arrival_bits": np.asarray(arrivals, dtype=float),
             "los_state": self.channel.los_state,
             "emergency_violation": emg_violation,
