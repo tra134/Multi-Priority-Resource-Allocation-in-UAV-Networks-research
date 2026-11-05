@@ -1,0 +1,12 @@
+#!/bin/sh
+# Reject a commit message that credits an AI as an author or contributor.
+. "$(dirname "$0")/ai_credit_patterns.sh"
+
+# Comment lines are removed by git before the commit is created.
+matches=$(grep -v '^#' "$1" | grep -Ein "$AI_CREDIT_MESSAGE")
+if [ -n "$matches" ]; then
+    echo "commit rejected: the message credits an AI (CLAUDE.md Rule 2):" >&2
+    echo "$matches" >&2
+    exit 1
+fi
+exit 0

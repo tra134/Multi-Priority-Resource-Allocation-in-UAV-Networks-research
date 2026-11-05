@@ -1,0 +1,25 @@
+#!/bin/sh
+# Reject a push if any new commit credits an AI in its message, author, or
+# committer. This also catches commits that skipped the commit-msg hook.
+. "$(dirname "$0")/ai_credit_patterns.sh"
+
+remote="$1"
+zero="0000000000000000000000000000000000000000"
+failed=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    # Deleting a remote branch pushes no commits.
+    [ "$local_sha" = "$zero" ] && continue
+
+    for commit in $(git rev-list "$local_sha" --not --remotes="$remote"); do
+        identity=$(git log -1 --format='%an <%ae>%n%cn <%ce>' "$commit")
+        message=$(git log -1 --format='%B' "$commit")
+        if printf '%s\n' "$identity" | grep -Eiq "$AI_CREDIT_IDENTITY" \
+            || printf '%s\n' "$message" | grep -Eiq "$AI_CREDIT_MESSAGE"; then
+            echo "push rejected: commit $commit credits an AI (CLAUDE.md Rule 2)" >&2
+            failed=1
+        fi
+    done
+done
+
+exit "$failed"
