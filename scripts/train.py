@@ -22,7 +22,9 @@ Features
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import platform
 import sys
 import time
 
@@ -45,8 +47,11 @@ from uavrl.config import checkpoint_run_name
 from uavrl.control.mask import RandomMaskSampler
 from uavrl.env.scenarios import make_scenario as registry_make_scenario
 from uavrl.env.uav_env import UAVEnv
+from uavrl.eval.manifest import append_manifest, collect_manifest
 from uavrl.eval.runner import run_episode
 from uavrl.seeds import monitor_seed, train_reset_seed
+
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # --------------------------------------------------------------------------- scenario helpers
 # Definitions live in configs/scenarios.yaml (finding F20).
@@ -81,6 +86,49 @@ def evaluate(agent, env_cfg, scenario_name, n_episodes=20, seed0=None):
         out[f"{scenario_name}/mean_{k}"] = float(np.mean(vals))
         out[f"{scenario_name}/std_{k}"] = float(np.std(vals))
     return out
+
+
+# --------------------------------------------------------------------------- manifest
+def write_checkpoint_manifest(ckpt_paths, *, root, cfg, run_name, seed, n_critics,
+                              mask_aware, dr_wide, step, total_steps,
+                              resumed_from_step=None):
+    """Write <ckpt>.manifest.json for each checkpoint and append to <run>.manifest.jsonl.
+
+    Never raises: a failure only prints a warning (training must continue, P-012).
+    """
+    try:
+        meta = cfg.get("meta", {})
+        resumed = resumed_from_step is not None
+        info = collect_manifest(root, cfg, "none")
+        info.update({
+            "run_name": run_name,
+            "seed": int(seed),
+            "n_critics": int(n_critics),
+            "mask_aware": bool(mask_aware),
+            "dr_wide": bool(dr_wide),
+            "env_version": meta.get("env_version"),
+            "env_frozen": meta.get("env_frozen"),
+            "step": int(step),
+            "total_steps": int(total_steps),
+            "resumed": resumed,
+            "resumed_from_step": resumed_from_step,
+            "replay_buffer_restored": False,  # the buffer is never saved; resumes start empty
+            "torch_version": torch.__version__,
+            "cuda_available": bool(torch.cuda.is_available()),
+            "cuda_device": (torch.cuda.get_device_name(0)
+                            if torch.cuda.is_available() else None),
+            "python": platform.python_version(),
+        })
+        for path in ckpt_paths:
+            path = os.fspath(path)
+            base = path[:-3] if path.endswith(".pt") else path
+            rec = dict(info, checkpoint=os.path.basename(path))
+            with open(base + ".manifest.json", "w", encoding="utf-8") as f:
+                json.dump(rec, f, sort_keys=True, default=str, indent=2)
+            append_manifest(os.path.join(os.path.dirname(path), f"{run_name}.manifest.jsonl"),
+                            rec)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[manifest] WARNING: could not write manifest: {exc!r}")
 
 
 # --------------------------------------------------------------------------- main
@@ -169,6 +217,7 @@ def main():
     run_name = checkpoint_run_name(args.agent, args.seed, n_critics,
                                    args.dr_wide, mask_aware=args.mask_aware)
     start_step = 1
+    resumed_from_step = None
     if args.resume:
         ckpt = os.path.join(args.ckpt_dir, f"{run_name}_latest.pt")
         if os.path.exists(ckpt):
@@ -176,6 +225,7 @@ def main():
             saved_step = payload.get("step")
             if saved_step is not None:
                 start_step = int(saved_step) + 1
+                resumed_from_step = int(saved_step)
             else:
                 # Old checkpoint format: only model weights were saved.
                 print("[resume] checkpoint has no step counter; restarting from step 1")
@@ -281,6 +331,12 @@ def main():
             agent.save(ckpt_path, step=step)
             latest = os.path.join(args.ckpt_dir, f"{run_name}_latest.pt")
             agent.save(latest, step=step)
+            write_checkpoint_manifest(
+                [ckpt_path, latest],
+                root=ROOT_DIR, cfg=cfg, run_name=run_name, seed=args.seed,
+                n_critics=n_critics, mask_aware=args.mask_aware, dr_wide=args.dr_wide,
+                step=step, total_steps=args.steps, resumed_from_step=resumed_from_step,
+            )
 
     tb.close()
     print(f"Training done: {run_name}")
