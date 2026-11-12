@@ -98,5 +98,11 @@ def test_repo_yaml_parses_with_seeds_0_to_4():
         e = calib[f"sac_seed{s}_N10_mask"]
         assert e["tau_unc"] > 0 and e["theta_queue"] in (20000, 35000)
     assert calib["sac_seed0_N10_mask"]["m9_K"] == 157
-    assert calib["sac_seed1_N10_mask"]["m9_K"] is None
+    # calib-v2 is frozen (TE-082): every seed has M8/M9, consistent with K = round(2000 / C)
+    assert raw["frozen"] is True
+    for s in range(5):
+        e = calib[f"sac_seed{s}_N10_mask"]
+        assert e["status"] == "complete"
+        assert 0 < e["m8_random_rate"] < 0.05
+        assert e["m9_K"] == round(1 / e["m8_random_rate"])
     assert "sources" in raw

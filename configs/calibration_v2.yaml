@@ -2,12 +2,12 @@
 # Validation seeds only; no test seeds, no ground-truth labels.
 version: calib-v2
 env_version: env-v2
-frozen: false  # HUMAN flips this after the M8/M9 measurement
+frozen: true  # frozen 2026-11-13 under the HUMAN's calib-v2 approval (TE-071, TE-082)
 protocol: [TE-041, TE-073]  # theta_queue rule (TE-041); M8/M9 call-rate method (TE-073)
 note: >-
   m8_random_rate and m9_K come from M12's call rate with MockLLM, an approximation of
   the real-LLM rate (the mask a real LLM installs can change later triggers a little).
-  Seed 0 keeps the TE-048 values (RQ3 MockLLM run); seeds 1-4 are measured later (TE-073).
+  Seed 0 keeps the TE-048 values (RQ3 MockLLM run); seeds 1-4 were measured with the TE-073 protocol (TE-077, TE-078).
 checkpoints:
   sac_seed0_N10_mask:
     tau_unc: 0.3613982063531872  # raw p99, val_seed(0..49), 50 slots skipped
@@ -18,27 +18,27 @@ checkpoints:
   sac_seed1_N10_mask:
     tau_unc: 0.23159659937024007  # raw p99, val_seed(0..49), 50 slots skipped
     theta_queue: 20000.0  # TE-041 rule on val_seed(1100..1109)
-    m8_random_rate: null
-    m9_K: null
-    status: pending  # measured later on Colab (TE-073)
+    m8_random_rate: 0.013266666666666666  # TE-077/TE-078: C = 26.53 calls / 2000 slots
+    m9_K: 75  # round(2000 / C)
+    status: complete
   sac_seed2_N10_mask:
     tau_unc: 0.2734246399998656  # raw p99, val_seed(0..49), 50 slots skipped
     theta_queue: 35000.0  # TE-041 rule on val_seed(1100..1109)
-    m8_random_rate: null
-    m9_K: null
-    status: pending  # measured later on Colab (TE-073)
+    m8_random_rate: 0.006483333333333333  # TE-077/TE-078: C = 12.97 calls / 2000 slots
+    m9_K: 154  # round(2000 / C)
+    status: complete
   sac_seed3_N10_mask:
     tau_unc: 0.32373240649700025  # raw p99, val_seed(0..49), 50 slots skipped
     theta_queue: 20000.0  # TE-041 rule on val_seed(1100..1109)
-    m8_random_rate: null
-    m9_K: null
-    status: pending  # measured later on Colab (TE-073)
+    m8_random_rate: 0.0111  # TE-077/TE-078: C = 22.2 calls / 2000 slots
+    m9_K: 90  # round(2000 / C)
+    status: complete
   sac_seed4_N10_mask:
     tau_unc: 0.42937282472848853  # raw p99, val_seed(0..49), 50 slots skipped
     theta_queue: 35000.0  # TE-041 rule on val_seed(1100..1109)
-    m8_random_rate: null
-    m9_K: null
-    status: pending  # measured later on Colab (TE-073)
+    m8_random_rate: 0.005716666666666666  # TE-077/TE-078: C = 11.43 calls / 2000 slots
+    m9_K: 175  # round(2000 / C)
+    status: complete
 sources:
   tau_unc:
     file: run_2026-11-09/stage5_seeds0to4/tau.csv  # Drive MyDrive/uavrl/results/
@@ -56,4 +56,9 @@ sources:
       - {file: run_2026-11-09/m7_m13_seed4/selection.csv, sha256: f51991369ed3ede19c3211705b5a9546582499b7e928a2494c3107584d0b9144, checkpoint: sac_seed4_N10_mask}
   m8_m9:
     seed0: TE-048 (RQ3 MockLLM run, S1/S2/S4 mean 12.7 calls per 2000-slot episode)
-    seeds1to4: pending; TE-073 protocol, MockLLM, S1/S2/S4, val_seed(1400..1409), 10 episodes each
+    seeds1to4: TE-073 protocol, MockLLM, S1/S2/S4, val_seed(1400..1409), 10 episodes each (TE-077, TE-078)
+    files:  # Drive MyDrive/uavrl/results/calib_rate_2026-11-12/ (old account, shared)
+      - {file: seed1/summary.csv, sha256: 8cfdc5613fdf6a1325393acaf3ea958908a6ea545052409fb196b85e0fb291ec}
+      - {file: seed2/summary.csv, sha256: 9c5bcb423791ee3e872bce5309702d2cc4384bf92ad4556054057525a7064cf3}
+      - {file: seed3/summary.csv, sha256: 5dc99a765b03a3120a2db6517338f4214a9dc206ef1a3b9479a34b9ae2379fee}
+      - {file: seed4/summary.csv, sha256: ce4faf8fdb2ef9c8e3c73f62f0ccad4287986d6b2a886e54d158eb2fc3e419d9}
