@@ -126,6 +126,8 @@ METHODS = {
     "m12_proposed": {"label": "M12 Proposed", "kind": "llm", "trigger": "hybrid"},
     "m12b_interim": {"label": "M12b Proposed + interim fallback", "kind": "llm",
                      "trigger": "hybrid", "interim": True},
+    "m12c_instant_rule": {"label": "M12c Proposed + instant rule mask", "kind": "llm",
+                          "trigger": "hybrid", "instant": True},
     "m13_fixed_reserve": {"label": "M13 Fixed Reservation", "kind": "reserve"},
 }
 
@@ -503,6 +505,7 @@ def main():
                             periodic_K=(args.periodic_k // spec.get("k_div", 1)),
                             random_rate=args.random_rate,
                             interim_fallback=bool(spec.get("interim", False)),
+                            instant_rule_mask=bool(spec.get("instant", False)),
                             rng=np.random.default_rng(eval_seed),
                             latency_model=LatencyModel(
                                 scenario_latency(scenario_id), latency_sigma),

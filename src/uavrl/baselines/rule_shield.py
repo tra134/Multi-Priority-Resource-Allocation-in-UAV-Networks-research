@@ -127,13 +127,20 @@ class RuleShield:
         b, p = project_bw_power(b_share, p_share, self.active_mask)
         if self.active_mask is not None:
             self.mask_active_slots += 1
+        # P-019: the actor reads its previous action in the observation. When the
+        # projection changes nothing, hand back the actor's own vector so the shield is
+        # transparent; a re-encoded vector has the same shares but a different input.
+        if np.allclose(b, b_share) and np.allclose(p, p_share):
+            return np.asarray(base_action, dtype=np.float32)
         # convert projected shares back to action space so the env's softmax
         # recovers exactly b and p.
         return np.concatenate([self._action(b), self._action(p)]).astype(np.float32)
 
     @staticmethod
     def _shares(x):
-        x = np.asarray(x, dtype=float)
+        # The environment maps an action to shares with softmax(3 * x) (uav_env.py),
+        # so the same map must be used here (P-018).
+        x = 3.0 * np.asarray(x, dtype=float)
         x = x - np.max(x)
         e = np.exp(x)
         return e / e.sum()
@@ -167,12 +174,12 @@ class FixedReservation:
 
     def __call__(self, obs, info):
         base_action = self.base_policy(obs, info)
-        b, p = project_bw_power(
-            RuleShield._shares(base_action[:3]),
-            RuleShield._shares(base_action[3:]),
-            self.mask,
-        )
+        b_share = RuleShield._shares(base_action[:3])
+        p_share = RuleShield._shares(base_action[3:])
+        b, p = project_bw_power(b_share, p_share, self.mask)
         self.mask_active_slots += 1
+        if np.allclose(b, b_share) and np.allclose(p, p_share):
+            return np.asarray(base_action, dtype=np.float32)   # P-019: transparent when nothing changes
         return np.concatenate(
             [RuleShield._action(b), RuleShield._action(p)]
         ).astype(np.float32)

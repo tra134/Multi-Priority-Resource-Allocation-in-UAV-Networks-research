@@ -97,3 +97,71 @@ def test_fixed_reservation_keeps_emergency_floor():
     a = pol(None, {})
     assert _shares(a)[0] >= 0.5 - 1e-6
     assert pol.mask.valid()
+
+
+def _env_shares(v):
+    """Shares the environment derives from an action: softmax(3 * x) (uav_env.py)."""
+    z = 3.0 * np.asarray(v, dtype=float)
+    z = z - z.max()
+    e = np.exp(z)
+    return e / e.sum()
+
+
+def test_rule_shield_without_mask_leaves_the_actor_allocation_unchanged():
+    """P-018: with no active mask the shield must hand the environment the same
+    bandwidth and power shares as the base policy (it used softmax(x), not softmax(3x))."""
+    rng = np.random.default_rng(0)
+    for _ in range(50):
+        a = rng.uniform(-1, 1, 6).astype(np.float32)
+        shield = RuleShield(theta_queue_bits=1e18, base_policy=lambda obs, info, _a=a: _a)
+        out = shield(None, {})
+        assert np.allclose(_env_shares(out[:3]), _env_shares(a[:3]), atol=1e-6)
+        assert np.allclose(_env_shares(out[3:]), _env_shares(a[3:]), atol=1e-6)
+
+
+def test_fixed_reservation_with_zero_floors_leaves_the_actor_allocation_unchanged():
+    """P-018, M13: a reservation whose floors are zero is the actor itself."""
+    rng = np.random.default_rng(1)
+    for _ in range(50):
+        a = rng.uniform(-1, 1, 6).astype(np.float32)
+        pol = FixedReservation(lambda obs, info, _a=a: _a, bw_floor_emg=0.0, power_floor_emg=0.0)
+        out = pol(None, {})
+        assert np.allclose(_env_shares(out[:3]), _env_shares(a[:3]), atol=1e-6)
+        assert np.allclose(_env_shares(out[3:]), _env_shares(a[3:]), atol=1e-6)
+
+
+def _untrained_agent():
+    from uavrl.agents.sac import SACAgent
+
+    return SACAgent(17, 6, device="cpu", seed=1, N_critics=2, rng=np.random.default_rng(1))
+
+
+def _short_env(seed=0):
+    from tests.test_controller import _make_env
+
+    return _make_env(seed=seed)[0]
+
+
+def test_rule_shield_without_mask_reproduces_the_actor_trajectory():
+    """P-019: the actor reads its previous action in the observation, so a shield that
+    re-encodes the action (same shares, different vector) changes later decisions."""
+    agent = _untrained_agent()
+
+    def base(obs, info):
+        return agent.select_action(obs, deterministic=True)
+
+    plain, _ = run_episode(_short_env(), base, seed=0)
+    shield = RuleShield(theta_queue_bits=1e18, base_policy=base)
+    shielded, _ = run_episode(_short_env(), shield, seed=0)
+    assert shield.mask_active_slots == 0
+    assert np.allclose([s["reward"] for s in plain], [s["reward"] for s in shielded], atol=1e-9)
+    assert np.allclose([s["b_share_emg"] for s in plain],
+                       [s["b_share_emg"] for s in shielded], atol=1e-9)
+
+
+def test_fixed_reservation_whose_floors_the_actor_already_meets_leaves_it_unchanged():
+    """P-019, M13: a projection that changes nothing must return the actor's own vector."""
+    a = np.array([0.9, -0.1, -0.2, 0.8, 0.1, -0.3], dtype=np.float32)   # not zero-mean, meets the floors
+    pol = FixedReservation(lambda obs, info, _a=a: _a, bw_floor_emg=0.2, power_floor_emg=0.2)
+    out = pol(None, {})
+    assert np.array_equal(out, a)

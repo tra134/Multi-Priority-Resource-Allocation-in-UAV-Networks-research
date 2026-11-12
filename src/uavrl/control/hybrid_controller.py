@@ -73,6 +73,9 @@ class HybridController:
         periodic_K: int = 20,
         random_rate: float = 0.05,
         interim_fallback: bool = False,
+        instant_rule_mask: bool = False,
+        rule_bw_floor: float = 0.5,
+        rule_power_floor: float = 0.5,
         rng=None,
         latency_model: Optional[LatencyModel] = None,
         use_fitted_latency: bool = False,
@@ -92,6 +95,11 @@ class HybridController:
         self.periodic_K = periodic_K
         self.random_rate = random_rate
         self.interim_fallback = interim_fallback
+        # M12c: install the Rule-Shield mask when the call is made, so Emergency is
+        # protected while the (slow) reply is in flight; a valid reply replaces it.
+        self.instant_rule_mask = bool(instant_rule_mask)
+        self.rule_bw_floor = float(rule_bw_floor)
+        self.rule_power_floor = float(rule_power_floor)
         self.rng = np.random.default_rng() if rng is None else rng
 
         self.slot_ms = float(cfg.get("timing", {}).get("slot_ms", 5.0))
@@ -242,6 +250,10 @@ class HybridController:
             fallback_active = self.fallback_until > t
             mask_active = self.active_mask is not None and not fallback_active
 
+            # P-019: the actor reads its previous action in the observation, so when nothing
+            # overrides it the environment must receive the actor's own vector, not a
+            # re-encoding with the same shares.
+            action = None
             if fallback_active:
                 b_share = self.fallback_bw.copy()
                 p_share = self.fallback_power.copy()
@@ -249,11 +261,17 @@ class HybridController:
                 b_raw_s = _softmax(3.0 * a_raw[:3])
                 p_raw_s = _softmax(3.0 * a_raw[3:])
                 b_share, p_share = project_bw_power(b_raw_s, p_raw_s, self.active_mask)
+                if np.allclose(b_share, b_raw_s) and np.allclose(p_share, p_raw_s):
+                    action = np.asarray(a_raw, dtype=np.float32)
             else:
                 b_share = _softmax(3.0 * a_raw[:3])
                 p_share = _softmax(3.0 * a_raw[3:])
+                action = np.asarray(a_raw, dtype=np.float32)
 
-            action = np.concatenate([_inv_softmax(b_share), _inv_softmax(p_share)]).astype(np.float32)
+            if action is None:
+                action = np.concatenate(
+                    [_inv_softmax(b_share), _inv_softmax(p_share)]
+                ).astype(np.float32)
 
             # ---- 4. env step
             obs, reward, terminated, truncated, info = self.env.step(action)
@@ -343,6 +361,13 @@ class HybridController:
                 if self.interim_fallback:
                     # M12b: safe allocation while the answer is in flight.
                     self.fallback_until = max(self.fallback_until, known_slot)
+                if self.instant_rule_mask and self.active_mask is None:
+                    # M12c: the rule mask applies now; it expires after the usual TTL.
+                    self.active_mask = Mask(
+                        bw_floor=np.array([self.rule_bw_floor, 0.0, 0.0], dtype=float),
+                        power_floor_emg=self.rule_power_floor,
+                        expires_at=t + self.ttl_slots,
+                    )
                 self.cooldown_counter = self.cooldown
 
             # ---- 6. masks naturally expire (handled at top of next loop)

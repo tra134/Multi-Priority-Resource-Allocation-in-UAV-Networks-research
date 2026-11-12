@@ -357,3 +357,58 @@ def test_mock_reaches_fading_modes_through_the_real_controller():
     ctrl.run_episode(seed=2)
     modes = {c["mode"] for c in ctrl.call_log if c["mode"]}
     assert modes & {"DEEP_FADING", "COMPOUND"}, modes
+
+
+def test_hybrid_controller_without_trigger_reproduces_the_actor_trajectory():
+    """P-019: with no call and no mask the controller must hand the environment the actor's
+    own action vector; a re-encoded vector changes the next observation (prev action)."""
+    from uavrl.eval.runner import run_episode
+
+    agent = _make_agent(seed=1)
+    env_a, _ = _make_env(seed=0)
+    plain, _ = run_episode(env_a, lambda obs, info: agent.select_action(obs, deterministic=True), seed=0)
+    env_b, _ = _make_env(seed=0)
+    ctrl = _make_controller(env_b, agent, trigger_mode="uncertainty", tau_unc=1e9, seed=7)
+    steps, _ = ctrl.run_episode(seed=0)
+    assert ctrl.llm_client.llm.call_count == 0
+    assert np.allclose([s["reward"] for s in plain], [s["reward"] for s in steps], atol=1e-9)
+
+
+def _never_answers_controller(env, agent, instant):
+    """Trigger fires, but the LLM reply never arrives inside the episode."""
+    rng = np.random.default_rng(7)
+    client = MockLLMClient(model="mock", latency_median_ms=10**7, latency_sigma=0.01,
+                           rng=rng, cache=LLMCache(enabled=False))
+    return HybridController(
+        agent, env, client, env.config,
+        trigger_mode="queue", tau_unc=1e9, theta_queue=15000.0,
+        debounce_m=2, cooldown=30, ttl_slots=100, timeout_ms=10**9,
+        fallback_slots=50, rng=rng, instant_rule_mask=instant,
+    )
+
+
+def test_instant_rule_mask_protects_emergency_before_the_llm_answers():
+    """M12c: the rule mask is installed at trigger time, so it is active while the
+    LLM reply is still in flight; plain M12 has no mask in that time."""
+    agent = _make_agent(seed=1)
+    env_a, _ = _make_env(seed=0)
+    _, summary_plain = _never_answers_controller(env_a, agent, False).run_episode(seed=0)
+    env_b, _ = _make_env(seed=0)
+    _, summary_m12c = _never_answers_controller(env_b, agent, True).run_episode(seed=0)
+    assert summary_plain["mask_active_fraction"] == 0.0
+    assert summary_m12c["mask_active_fraction"] > 0.0
+
+
+def test_instant_rule_mask_is_replaced_by_a_valid_llm_reply():
+    """M12c: a valid answer from the LLM takes over from the rule mask."""
+    agent = _make_agent(seed=1)
+    env, _ = _make_env(seed=0)
+    rng = np.random.default_rng(7)
+    client = MockLLMClient(model="mock", latency_median_ms=20.0, latency_sigma=0.01,
+                           rng=rng, cache=LLMCache(enabled=False))
+    ctrl = HybridController(agent, env, client, env.config, trigger_mode="queue",
+                            tau_unc=1e9, theta_queue=15000.0, debounce_m=2, cooldown=30,
+                            ttl_slots=100, timeout_ms=1000, fallback_slots=50, rng=rng,
+                            instant_rule_mask=True)
+    ctrl.run_episode(seed=0)
+    assert ctrl.valid >= 1
