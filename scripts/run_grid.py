@@ -65,6 +65,7 @@ from uavrl.baselines.static_policies import (
     emergency_only,
     greedy_sum_rate,
 )
+from uavrl.calibration import load_calibration, required_params, resolve_params
 from uavrl.config import (
     checkpoint_run_name,
     find_project_root,
@@ -259,12 +260,14 @@ def main():
     parser.add_argument("--theta-queue", type=float, default=None)
     parser.add_argument("--cooldown", type=int, default=None)
     parser.add_argument("--ttl-slots", type=int, default=None)
-    parser.add_argument("--random-rate", type=float, default=0.05,
-                        help="M8 call rate; Stage 5 sets it from M12's validation rate")
-    parser.add_argument("--periodic-k", type=int, default=250,
-                        help="M9 period; Stage 5 sets it from M12's validation rate")
+    parser.add_argument("--random-rate", type=float, default=None,
+                        help="M8 call rate; overrides the calibration file")
+    parser.add_argument("--periodic-k", type=int, default=None,
+                        help="M9 period; overrides the calibration file")
+    parser.add_argument("--calibration", default="configs/calibration_v2.yaml",
+                        help="per-checkpoint tau_unc, theta_queue, M8 rate, M9 K")
     parser.add_argument("--rule-theta", type=float, default=None,
-                        help="Rule-Shield threshold; default = trigger.theta_queue")
+                        help="Rule-Shield threshold; default = calibrated theta_queue")
     parser.add_argument("--resume", action="store_true", default=True)
     parser.add_argument("--no-resume", dest="resume", action="store_false")
     args = parser.parse_args()
@@ -288,16 +291,10 @@ def main():
     timeout_ms = int(timing.get("llm_timeout_ms", 5000))
 
     trigger_cfg = cfg.get("trigger", {})
-    tau_unc = args.tau_unc if args.tau_unc is not None else trigger_cfg.get("tau_unc")
-    theta_queue = (args.theta_queue if args.theta_queue is not None
-                   else trigger_cfg.get("theta_queue"))
-    if theta_queue is None:
-        theta_queue = 20000.0
     cooldown = (args.cooldown if args.cooldown is not None
                 else int(trigger_cfg.get("cooldown", 50)))
     ttl_slots = (args.ttl_slots if args.ttl_slots is not None
                  else int(trigger_cfg.get("ttl_slots", 600)))
-    rule_theta = args.rule_theta if args.rule_theta is not None else theta_queue
 
     methods = parse_list(args.methods)
     scenarios = parse_list(args.scenarios)
@@ -312,6 +309,24 @@ def main():
         raise SystemExit(f"--seeds must be in [0, {MAX_TRAIN_SEEDS})")
 
     preflight_checkpoints(methods, seeds, args.ckpt_dir)
+
+    # ---- calib-v2: per-seed trigger/shield values (no fallback to default.yaml)
+    calib_path = (args.calibration if os.path.isabs(args.calibration)
+                  else os.path.join(ROOT, args.calibration))
+    calib = load_calibration(calib_path)
+    overrides = {"tau_unc": args.tau_unc, "theta_queue": args.theta_queue,
+                 "random_rate": args.random_rate, "periodic_k": args.periodic_k}
+    seed_params = {}  # (method, seed) -> values
+    calib_record = {}  # seed -> {param: {"value", "source"}}
+    for seed in seeds:
+        run_name = checkpoint_run_name("sac", seed, 10, mask_aware=True)
+        for name in methods:
+            vals, srcs = resolve_params(
+                calib, run_name, overrides, required_params(METHODS[name]))
+            seed_params[(name, seed)] = vals
+            for p, v in vals.items():
+                calib_record.setdefault(str(seed), {})[p] = {
+                    "value": v, "source": srcs[p]}
 
     # ---- LLM clients
     llm_cfg = llm_settings(args.llm_config)
@@ -383,12 +398,14 @@ def main():
         collect_manifest(
             find_project_root(), cfg, run_client,
             args={"methods": methods, "scenarios": scenarios, "seeds": seeds,
-                  "episodes": args.episodes, "slots": slots, "tau_unc": tau_unc,
-                  "theta_queue": theta_queue, "cooldown": cooldown,
-                  "ttl_slots": ttl_slots, "random_rate": args.random_rate,
-                  "periodic_k": args.periodic_k, "rule_theta": rule_theta,
+                  "episodes": args.episodes, "slots": slots,
+                  "calibration_file": args.calibration,
+                  "calibration_used": calib_record,
+                  "cooldown": cooldown, "ttl_slots": ttl_slots,
+                  "rule_theta_override": args.rule_theta,
                   "llm_model": llm_cfg.get("model") if "real" in kinds else None},
-            files=["configs/default.yaml", "configs/scenarios.yaml", "configs/llm.yaml"],
+            files=["configs/default.yaml", "configs/scenarios.yaml", "configs/llm.yaml",
+                   args.calibration],
         ),
     )
     csv_file = open(out_path, "a", newline="", encoding="utf-8")
@@ -448,6 +465,7 @@ def main():
                     })
 
                     t0 = time.perf_counter()
+                    params = seed_params[(method_name, seed)]
                     ctrl = None
                     shield = None
                     bench = None
@@ -469,7 +487,9 @@ def main():
                         if spec["kind"] == "rule":
                             fitted = spec["shield_latency"] == "fitted"
                             shield = RuleShield(
-                                theta_queue_bits=rule_theta, m=3,
+                                theta_queue_bits=(args.rule_theta if args.rule_theta is not None
+                                                  else params["theta_queue"]),
+                                m=3,
                                 ttl_slots=ttl_slots, cooldown=cooldown,
                                 base_policy=base,
                                 latency_model=(LatencyModel(nominal_latency, latency_sigma)
@@ -493,8 +513,8 @@ def main():
                         ctrl = HybridController(
                             agent, env, client, cfg,
                             trigger_mode=trigger,
-                            tau_unc=tau_unc,
-                            theta_queue=theta_queue,
+                            tau_unc=params.get("tau_unc"),
+                            theta_queue=params.get("theta_queue"),
                             debounce_m=int(trigger_cfg.get("debounce_m", 3)),
                             cooldown=0 if trigger in ("periodic", "always", "random")
                             else cooldown,
@@ -502,8 +522,8 @@ def main():
                             timeout_ms=timeout_ms,
                             fallback_slots=int(cfg.get("fallback", {}).get(
                                 "fallback_slots", 200)),
-                            periodic_K=(args.periodic_k // spec.get("k_div", 1)),
-                            random_rate=args.random_rate,
+                            periodic_K=(params.get("periodic_k", 1) // spec.get("k_div", 1)),
+                            random_rate=params.get("random_rate", 0.0),
                             interim_fallback=bool(spec.get("interim", False)),
                             instant_rule_mask=bool(spec.get("instant", False)),
                             rng=np.random.default_rng(eval_seed),
