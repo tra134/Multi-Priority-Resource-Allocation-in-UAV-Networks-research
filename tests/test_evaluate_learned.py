@@ -106,3 +106,78 @@ def test_missing_final_pt(runs, tmp_path):
     (bad / "final.pt").unlink()
     r = sh(SCRIPT, "--runs", str(bad), "--out", str(tmp_path / "o"), "--seeds-start", "0", "--n-episodes", "1")
     assert r.returncode != 0 and "final.pt" in r.stderr
+
+
+# ---- A-38: gate item 3 on synthetic per-seed data (no training) ----
+NS = (2, 4, 6, 8, 10, 12)
+M3 = ("POS_MADDPG_NOMA", "FOS_MADDPG_NOMA", "POS_MAPPO_NOMA")
+
+
+def _load_gate():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("evaluate_learned", SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(ROOT / "src"))
+    spec.loader.exec_module(mod)
+    return mod.gate
+
+
+def _synth(succ_slope_pp=-3.0, lat_slope=0.9, base=0.95, seeds=(0, 1, 2), ns=NS, methods=M3,
+           overrides=None, seed_sets=None, fos_bonus=0.02):
+    """Return (summ, per_seed) with linear per-seed trends; overrides[(method, seed)] = (pp slope, ms slope)."""
+    overrides = overrides or {}
+    per_seed, summ = {}, {}
+    for m in methods:
+        for n in ns:
+            ss = (seed_sets or {}).get((m, n), seeds)
+            d = {}
+            for s in ss:
+                ssl, lsl = overrides.get((m, s), (succ_slope_pp, lat_slope))
+                sr = base + (fos_bonus if m == "FOS_MADDPG_NOMA" else 0.0) + ssl / 100.0 * (n - 2)
+                d[s] = {"success_rate": sr, "mean_latency_ms": 5.0 + lsl * (n - 2)}
+            per_seed[(m, n)] = d
+            summ[(m, n)] = {k: sum(v[k] for v in d.values()) / len(d) for k in ("success_rate", "mean_latency_ms")}
+    return summ, per_seed
+
+
+def _item3(**kw):
+    summ, per_seed = _synth(**kw)
+    return _load_gate()(summ, per_seed)["3"]
+
+
+def test_a38_pass():
+    it = _item3()
+    assert it["status"] == "pass", it
+    assert it["thresholds"] and "seed_sets" in it and "slopes" in it
+
+
+def test_a38_too_flat_fails():
+    assert _item3(succ_slope_pp=-0.5)["status"] == "fail"
+
+
+def test_a38_one_seed_positive_fails():
+    it = _item3(overrides={("POS_MADDPG_NOMA", 0): (+0.5, 0.9), ("POS_MADDPG_NOMA", 1): (-6.0, 0.9),
+                           ("POS_MADDPG_NOMA", 2): (-6.0, 0.9)})
+    assert it["status"] == "fail"  # mean slope -3.8 passes, but one seed slope is positive
+
+
+def test_a38_missing_n_not_evaluable():
+    assert _item3(ns=(2, 4, 6, 8, 10))["status"] == "not_evaluable"
+
+
+def test_a38_seed_sets_differ_not_evaluable():
+    assert _item3(seed_sets={("POS_MAPPO_NOMA", 12): (0, 1, 3)})["status"] == "not_evaluable"
+
+
+def test_a38_missing_method_not_evaluable():
+    assert _item3(methods=M3[:2])["status"] == "not_evaluable"
+
+
+def test_a38_latency_threshold():
+    assert _item3(lat_slope=0.2)["status"] == "fail"
+    assert _item3(lat_slope=0.31)["status"] == "pass"
+    assert _item3(overrides={("FOS_MADDPG_NOMA", 1): (-3.0, -0.1)})["status"] == "fail"
+
+
+def test_a38_fos_best_fail():
+    assert _item3(fos_bonus=-0.02)["status"] == "fail"

@@ -1,11 +1,11 @@
 # Training hyperparameters for the Lin et al. 2025 reproduction (docs/lin2025_spec.md Section 10).
-# A-23 values must be approved by the HUMAN before a real training run.
-# Tags: P = paper location, A-23 = proposed assumption, pending HUMAN approval.
+# A-23 values are provisional and locked by the A-39 pilot (docs/lin2025_spec.md Section 6).
+# Tags: P = paper location, A-23 = provisional assumption (locked by the A-39 pilot).
 
-episodes: 10000      # A-23 (proposed, pending HUMAN approval); Fig. 4 axis
-eval_every: 500      # A-23 (proposed, pending HUMAN approval)
-eval_episodes: 20    # A-23 (proposed, pending HUMAN approval); validation seeds 2000.. (A-36)
-ckpt_every: 500      # A-23 (proposed, pending HUMAN approval)
+episodes: 10000      # A-23 (provisional, locked by the A-39 pilot); Fig. 4 axis
+eval_every: 500      # A-23 (provisional, locked by the A-39 pilot)
+eval_episodes: 20    # A-23 (provisional, locked by the A-39 pilot); validation seeds 2000.. (A-36)
+ckpt_every: 500      # A-23 (provisional, locked by the A-39 pilot)
 
 maddpg:
   batch: 320               # P: Section 6.1 hyperparameters
@@ -13,12 +13,12 @@ maddpg:
   critic_lr: 5.0e-5        # P: Section 6.1
   buffer: 131072           # P: Section 6.1 (2^17)
   gamma: 0.9               # P: Section 6.1
-  tau_soft: 0.01           # A-23 (proposed, pending HUMAN approval)
-  warmup: 1000             # A-23 (proposed, pending HUMAN approval); transitions before updates
-  gumbel_tau: 1.0          # A-23 (proposed, pending HUMAN approval)
-  noise_sigma_start: 0.1   # A-23 (proposed, pending HUMAN approval)
-  noise_sigma_end: 0.01    # A-23 (proposed, pending HUMAN approval)
-  noise_decay_steps: 50000 # A-23 (proposed, pending HUMAN approval); half of 10000 episodes x 10 steps
+  tau_soft: 0.01           # A-23 (provisional, locked by the A-39 pilot)
+  warmup: 1000             # A-23 (provisional, locked by the A-39 pilot); transitions before updates
+  gumbel_tau: 1.0          # A-23 (provisional, locked by the A-39 pilot)
+  noise_sigma_start: 0.1   # A-23 (provisional, locked by the A-39 pilot)
+  noise_sigma_end: 0.01    # A-23 (provisional, locked by the A-39 pilot)
+  noise_decay_steps: 50000 # A-23 (provisional, locked by the A-39 pilot); half of 10000 episodes x 10 steps
   actor_hidden: 128        # P: Fig. 3 (ReLU6)
   critic_hidden: [64, 32]  # P: Fig. 3
 
@@ -26,11 +26,11 @@ mappo:
   actor_lr: 3.0e-4         # P: Section 6.1 (same as MADDPG, A-23)
   critic_lr: 5.0e-5        # P: Section 6.1 (same as MADDPG, A-23)
   gamma: 0.9               # P: Section 6.1
-  gae_lambda: 0.95         # A-23 (proposed, pending HUMAN approval)
-  clip: 0.2                # A-23 (proposed, pending HUMAN approval)
-  epochs: 10               # A-23 (proposed, pending HUMAN approval)
-  minibatch: 320           # A-23 (proposed, pending HUMAN approval); P batch 320 reused
-  rollout_episodes: 32     # A-23 (proposed, pending HUMAN approval)
+  gae_lambda: 0.95         # A-23 (provisional, locked by the A-39 pilot)
+  clip: 0.2                # A-23 (provisional, locked by the A-39 pilot)
+  epochs: 10               # A-23 (provisional, locked by the A-39 pilot)
+  minibatch: 320           # A-23 (provisional, locked by the A-39 pilot); P batch 320 reused
+  rollout_episodes: 32     # A-23 (provisional, locked by the A-39 pilot)
   actor_hidden: 128        # P: Fig. 3 (ReLU6)
   critic_hidden: [64, 32]  # P: Fig. 3
-  ent_coef: 0.01           # A-23 (proposed, pending HUMAN approval)
+  ent_coef: 0.01           # A-23 (provisional, locked by the A-39 pilot)

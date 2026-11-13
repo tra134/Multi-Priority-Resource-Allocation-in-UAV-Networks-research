@@ -28,6 +28,18 @@ def test_clone_cell_uses_code_ref_and_prints_commit():
     assert "git rev-parse HEAD" in clone[0]
 
 
+def test_table2_outputs_separate_from_pilot():
+    """TE-025: Table 2 runs are trained independently of the A-39 pilot, so their --out folders
+    must never be the pilot folders (uavmec/pos_*_sic_seed0), or --resume would continue a pilot."""
+    outs = []
+    for t, src in _cells():
+        if t == "code":
+            outs += re.findall(r"train\.py[^\n]*--out\s+(\S+)", src)
+    assert len(outs) == 6
+    for o in outs:
+        assert "/MyDrive/uavmec/table2/" in o, o
+
+
 def test_mentioned_scripts_exist():
     names = set()
     for _, src in _cells():

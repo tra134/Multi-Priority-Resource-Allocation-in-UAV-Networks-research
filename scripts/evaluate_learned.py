@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import itertools
 import json
 import math
 import subprocess
@@ -44,7 +43,13 @@ TARGETS = {
 }
 TARGET_NOTES = {"POS_MAPPO_NOMA": "success target 71.4% per A-35 (Table 2 says 61.25%)",
                 "Local_Computing": "success target 61.25% per A-32"}
-GATE4_TARGET, GATE4_TOL = 0.8563, 0.10  # spec Section 7 item 4
+GATE4_TARGET, GATE4_TOL = 0.8563, 0.10  # A-40: item 4, mean over training seeds at N = 8, |success - 0.8563| <= 0.10
+# A-38: gate item 3 constants (pre-registered 2026-11-13)
+A38_NS = (2, 4, 6, 8, 10, 12)
+A38_METHODS = ("POS_MADDPG_NOMA", "FOS_MADDPG_NOMA", "POS_MAPPO_NOMA")
+A38_THRESHOLDS = {"success_mean_slope_pp_per_sensor_max": -1.0, "success_every_seed_slope": "< 0",
+                  "latency_mean_slope_ms_per_sensor_min": 0.3, "latency_every_seed_slope": "> 0",
+                  "fos_best_at_n": [2, 4], "fos_best_tolerance": 0}
 
 
 def git_info() -> dict:
@@ -94,8 +99,65 @@ def mean_std(vals):
     return float(np.mean(a)), (float(np.std(a, ddof=1)) if len(a) > 1 else 0.0)
 
 
-def gate(summ: dict) -> dict:
-    """summ[(method, n)] -> {metric: mean over training seeds}. Spec Section 7, items 1-4."""
+def ols_slope(xs, ys) -> float:
+    """Ordinary least-squares slope of ys vs xs."""
+    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+    return sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True)) / sum((x - mx) ** 2 for x in xs)
+
+
+def gate_item3(summ: dict, per_seed: dict | None) -> dict:
+    """Gate item 3 (Fig. 5 trend), pre-registered rule A-38 (2026-11-13). # A-38
+
+    per_seed[(method, n)] -> {training_seed: {"success_rate": fraction, "mean_latency_ms": ms}}.
+    Slopes are per sensor: success in percentage points, latency in ms.
+    """
+    def ne(reason, **extra):
+        return {"status": "not_evaluable", "reason": reason, "checks": [], "thresholds": A38_THRESHOLDS, **extra}
+
+    seed_sets = {f"{m}|N={n}": sorted(per_seed[(m, n)]) for m in A38_METHODS for n in A38_NS
+                 if per_seed and (m, n) in per_seed}
+    if not per_seed:
+        return ne("per-seed values not available")
+    missing = [f"{m} N={n}" for m in A38_METHODS for n in A38_NS if (m, n) not in per_seed]
+    if missing:
+        return ne("missing method/N combinations: " + ", ".join(missing), seed_sets=seed_sets)
+    for m in A38_METHODS:
+        if len({tuple(seed_sets[f"{m}|N={n}"]) for n in A38_NS}) != 1:
+            return ne(f"{m}: training-seed set differs across N", seed_sets=seed_sets)
+    slopes, checks = {}, []
+    for m in A38_METHODS:
+        seeds = seed_sets[f"{m}|N={A38_NS[0]}"]
+        s_sl, l_sl = {}, {}
+        for s in seeds:
+            sv = [per_seed[(m, n)][s]["success_rate"] for n in A38_NS]
+            lv = [per_seed[(m, n)][s]["mean_latency_ms"] for n in A38_NS]
+            if any(math.isnan(v) for v in (*sv, *lv)):
+                return ne(f"{m} seed {s}: NaN metric (no successful tasks?)", seed_sets=seed_sets)
+            s_sl[s] = 100.0 * ols_slope(A38_NS, sv)
+            l_sl[s] = ols_slope(A38_NS, lv)
+        s_mean, l_mean = sum(s_sl.values()) / len(seeds), sum(l_sl.values()) / len(seeds)
+        slopes[m] = {"success_pp": {"seeds": s_sl, "mean": s_mean}, "latency_ms": {"seeds": l_sl, "mean": l_mean}}
+        checks.append({"claim": f"{m}: success slope mean <= -1.0 pp/sensor and every seed slope < 0",
+                       "evaluated": True, "mean": s_mean, "seeds": s_sl,
+                       "holds": bool(s_mean <= -1.0 and all(v < 0 for v in s_sl.values()))})
+        checks.append({"claim": f"{m}: latency slope mean >= +0.3 ms/sensor and every seed slope > 0",
+                       "evaluated": True, "mean": l_mean, "seeds": l_sl,
+                       "holds": bool(l_mean >= 0.3 and all(v > 0 for v in l_sl.values()))})
+    for n in (2, 4):
+        vals = {m: summ[(m, n)]["success_rate"] for m in A38_METHODS}
+        checks.append({"claim": f"FOS_MADDPG_NOMA best at N={n} (no tolerance)", "evaluated": True,
+                       "values": vals, "holds": all(vals["FOS_MADDPG_NOMA"] >= v for v in vals.values())})
+    ok = all(c["holds"] for c in checks)
+    return {"status": "pass" if ok else "fail", "checks": checks, "slopes": slopes, "seed_sets": seed_sets,
+            "thresholds": A38_THRESHOLDS,
+            "reason": "all A-38 checks hold" if ok else "at least one A-38 check fails"}
+
+
+def gate(summ: dict, per_seed: dict | None = None) -> dict:
+    """summ[(method, n)] -> {metric: mean over training seeds}. Spec Section 7, items 1-4.
+
+    per_seed (see gate_item3) is needed for item 3 only; without it item 3 is not_evaluable.
+    """
     def sr(m, n):
         return summ.get((m, n), {}).get("success_rate")
 
@@ -118,46 +180,20 @@ def gate(summ: dict) -> dict:
         return {"claim": f"{a} > {b} (N={n})", "evaluated": True, "holds": bool(x > y), "values": [x, y]}
 
     n = N_TARGET
-    # Item 1. FOS-vs-MAPPO ordering is deliberately not used (A-35).
+    # Item 1. # A-40: each method vs its own noSIC twin, at N = 8, on mean success.
+    # FOS-vs-MAPPO ordering is deliberately not used (A-35).
     c1 = [cmp("POS_MADDPG_NOMA", "FOS_MADDPG_NOMA", n), cmp("POS_MADDPG_NOMA", "POS_MAPPO_NOMA", n),
           cmp("FOS_MADDPG_NOMA", "FOS_MADDPG_noSIC", n), cmp("POS_MAPPO_NOMA", "POS_MAPPO_noSIC", n)]
     item1 = verdict(c1, "some compared methods or N = 8 are missing; pass needs every comparison evaluated")
-    # Item 2: every NOMA method with a noSIC twin at the same N beats it.
+    # Item 2: every NOMA method with a noSIC twin at the same N beats it (mean success). # A-40
     c2 = []
     for (m, nn) in sorted(summ):
         if m.endswith("_NOMA") and (m[:-4] + "noSIC", nn) in summ:
             c2.append(cmp(m, m[:-4] + "noSIC", nn))
     item2 = verdict(c2, "no NOMA/noSIC pair present at the same N") if c2 else {
         "status": "not_evaluable", "reason": "no NOMA/noSIC pair present at the same N", "checks": []}
-    # Item 3: trend over N for learned methods; FOS best at N = 2, 4.
-    learned = sorted({m for (m, _n) in summ if m != LOCAL})
-    ns_of = {m: sorted(nn for (mm, nn) in summ if mm == m) for m in learned}
-    if not learned or any(len(v) < 2 for v in ns_of.values()):
-        item3 = {"status": "not_evaluable", "checks": [],
-                 "reason": "needs at least two N values for every learned method; got "
-                           + json.dumps(ns_of)}
-    else:
-        c3 = []
-        for m in learned:
-            s = [summ[(m, nn)]["success_rate"] for nn in ns_of[m]]
-            lt = [summ[(m, nn)]["mean_latency_ms"] for nn in ns_of[m]]
-            c3.append({"claim": f"{m}: success non-increasing in N", "evaluated": True, "n": ns_of[m],
-                       "values": s, "holds": all(b <= a for a, b in itertools.pairwise(s))})
-            c3.append({"claim": f"{m}: latency non-decreasing in N", "evaluated": True, "n": ns_of[m],
-                       "values": lt, "holds": all(b >= a or math.isnan(a) or math.isnan(b)
-                                                  for a, b in itertools.pairwise(lt))})
-        for nn in (2, 4):
-            fos = sr("FOS_MADDPG_NOMA", nn)
-            others = {m: sr(m, nn) for m in learned if m != "FOS_MADDPG_NOMA" and m.endswith("_NOMA")
-                      and sr(m, nn) is not None}
-            if fos is None or not others:
-                c3.append({"claim": f"FOS_MADDPG_NOMA best at N={nn}", "evaluated": False, "holds": None})
-            else:
-                c3.append({"claim": f"FOS_MADDPG_NOMA best at N={nn}", "evaluated": True,
-                           "values": {"FOS_MADDPG_NOMA": fos, **others},
-                           "holds": all(fos >= v for v in others.values())})
-        item3 = verdict(c3, "FOS-best check not evaluable at N = 2, 4 and the trend checks all hold")
-    # Item 4.
+    item3 = gate_item3(summ, per_seed)
+    # Item 4. # A-40: mean over training seeds at N = 8, success as a fraction.
     v = sr("POS_MADDPG_NOMA", n)
     if v is None:
         item4 = {"status": "not_evaluable", "reason": "POS_MADDPG_NOMA at N = 8 not present", "values": None}
@@ -250,7 +286,12 @@ def main(argv=None) -> int:
         w.writeheader()
         w.writerows(summary_rows)
 
-    g = {"items": gate(summ), "seeds": [seeds[0], seeds[-1]],
+    per_seed: dict = {}  # A-38: per-training-seed values for gate item 3
+    for r in per_run:
+        if r["method"] != LOCAL:
+            per_seed.setdefault((r["method"], r["n_sensors"]), {})[r["seed"]] = {
+                "success_rate": r["success_rate"], "mean_latency_ms": r["mean_latency_ms"]}
+    g = {"items": gate(summ, per_seed), "seeds": [seeds[0], seeds[-1]],
          "note": "spec Section 7; FOS-vs-MAPPO ordering at N = 8 is not a gate item (A-35)"}
     (out / "gate.json").write_text(json.dumps(g, indent=2, default=str))
     manifest = {**git_info(), "timestamp": datetime.now(timezone.utc).isoformat(), "cli_args": vars(args),
