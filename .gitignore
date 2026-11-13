@@ -46,7 +46,9 @@ checkpoints/
 # OS
 Thumbs.db
 
-# Markdown notes are not committed, except README and the plan spec
+# Markdown notes (incl. plan.md) are not committed, except README
 *.md
 !README.md
-!plan.md
+
+# Local agent settings
+.claude/
