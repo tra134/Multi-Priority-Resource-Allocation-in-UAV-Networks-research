@@ -1,81 +1,49 @@
-"""Tests for dotenv/YAML configuration helpers (Phase 8 setup)."""
+import dataclasses
 
-from __future__ import annotations
+import pytest
 
-import os
-from pathlib import Path
+from uavmec.config import LinConfig, load_config
 
-import yaml
 
-from uavrl.config import (
-    checkpoint_run_name,
-    find_project_root,
-    llm_settings,
-    load_env,
+def test_load_defaults_match_dataclass():
+    cfg = load_config()
+    assert cfg == LinConfig()
+    assert cfg.n_uavs == 2 and cfg.n_sensors == 8 and cfg.n_subcarriers == 4
+    assert cfg.bandwidth_hz == 250e6 and cfg.noise_w == 1e-10 and cfg.beta0 == 1e-5
+    assert cfg.sensor_battery_j == (100e3, 400e3)
+    assert cfg.c_cyc == 24.5 and cfg.kappa == 1.0009e-27
+
+
+def test_overrides_and_frozen():
+    cfg = load_config(n_sensors=4)
+    assert cfg.n_sensors == 4
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        cfg.n_sensors = 3  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"n_sensors": 0},
+        {"noise_w": -1.0},
+        {"sensor_battery_j": (5.0, 1.0)},
+        {"task_min_bits": 2e6},
+        {"reward_success": -2.0},
+        {"unknown_key": 1},
+    ],
 )
+def test_bad_values_raise(bad):
+    with pytest.raises(ValueError):
+        load_config(**bad)
 
 
-def test_load_env_does_not_override_by_default(tmp_path, monkeypatch):
-    env_file = tmp_path / ".env"
-    env_file.write_text("A_TEST_VALUE=from_file\n# comment\nB_TEST_VALUE='quoted'\n")
-    monkeypatch.setenv("A_TEST_VALUE", "from_shell")
-    monkeypatch.delenv("B_TEST_VALUE", raising=False)
-
-    values = load_env(env_file)
-
-    assert values["A_TEST_VALUE"] == "from_file"
-    assert values["B_TEST_VALUE"] == "quoted"
-    assert os.environ["A_TEST_VALUE"] == "from_shell"
+def test_a3_per_carrier_only():
+    """A-3 decided 2026-11-13 (TE-010): 250 MHz per subcarrier; the comparison switch is removed."""
+    cfg = load_config()
+    assert not hasattr(cfg, "bandwidth_mode")
+    assert cfg.subcarrier_bw_hz == 250e6
 
 
-def test_load_env_override(tmp_path, monkeypatch):
-    env_file = tmp_path / ".env"
-    env_file.write_text("A_TEST_VALUE=from_file\n")
-    monkeypatch.setenv("A_TEST_VALUE", "from_shell")
-    load_env(env_file, override=True)
-    assert os.environ["A_TEST_VALUE"] == "from_file"
-
-
-def test_llm_settings_env_wins(tmp_path, monkeypatch):
-    cfg = tmp_path / "llm.yaml"
-    cfg.write_text(yaml.safe_dump({
-        "llm": {"base_url": "http://yaml", "model": "yaml-model", "api_key": None},
-        "cache": {"enabled": False, "dir": "x"},
-    }))
-    # load_env() inside llm_settings looks for the project-root .env; point the
-    # relevant vars explicitly instead so this test is hermetic.
-    monkeypatch.setenv("LLM_BASE_URL", "http://env")
-    monkeypatch.setenv("LLM_MODEL", "env-model")
-    monkeypatch.setenv("LLM_API_KEY", "env-key")
-    # Prevent the real repo .env from touching this test.
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("uavrl.config.find_project_root", lambda *a, **k: tmp_path)
-
-    llm = llm_settings(cfg)
-    assert llm["base_url"] == "http://env"
-    assert llm["model"] == "env-model"
-    assert llm["api_key"] == "env-key"
-    assert llm["cache"]["enabled"] is False
-
-
-def test_find_project_root_contains_pyproject():
-    root = find_project_root()
-    assert (Path(root) / "pyproject.toml").exists()
-
-
-def test_checkpoint_run_name_matches_grid_layout():
-    """train.py and run_grid.py must agree on the checkpoint filename."""
-    assert checkpoint_run_name("sac", 0, 10) == "sac_seed0_N10"
-    assert checkpoint_run_name("sac", 3, 2, dr_wide=True) == \
-        "sac_seed3_N2_drwide"
-
-
-def test_checkpoint_names_do_not_collide():
-    names = {
-        checkpoint_run_name("sac", 0, 10),
-        checkpoint_run_name("sac", 0, 10, mask_aware=True),
-        checkpoint_run_name("sac", 0, 2),
-        checkpoint_run_name("sac", 0, 2, dr_wide=True),
-    }
-    assert len(names) == 4
-    assert checkpoint_run_name("sac", 0, 10, mask_aware=True) == "sac_seed0_N10_mask"
+def test_a11_physical_only():
+    """A-11 decided 2026-11-13 (T-4): offloading energy is p * T0; the switch is removed."""
+    assert not hasattr(load_config(), "offload_energy")

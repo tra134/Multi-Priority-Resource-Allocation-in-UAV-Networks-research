@@ -46,4 +46,7 @@ checkpoints/
 # OS
 Thumbs.db
 
-plan.md
+# Markdown notes are not committed, except README and the plan spec
+*.md
+!README.md
+!plan.md

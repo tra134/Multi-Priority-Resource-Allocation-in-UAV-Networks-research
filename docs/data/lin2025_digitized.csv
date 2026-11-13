@@ -1,0 +1,229 @@
+figure,panel,algorithm,x,y,unit,method,uncertainty
+4,a,Local_Computing,0,15.8,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,Local_Computing,1000,15.5,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,Local_Computing,2000,15.8,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,Local_Computing,3000,15.2,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,Local_Computing,4000,14.0,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,Local_Computing,5000,15.3,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,Local_Computing,6000,15.5,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,Local_Computing,7000,13.8,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,Local_Computing,8000,15.0,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,Local_Computing,9000,14.8,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,Local_Computing,9800,15.7,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,Local_Computing,last2000_mean,15.1,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,FOS_MADDPG_NOMA,0,7.5,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,FOS_MADDPG_NOMA,1000,12.8,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,FOS_MADDPG_NOMA,2000,9.5,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,FOS_MADDPG_NOMA,3000,12.9,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,FOS_MADDPG_NOMA,4000,10.4,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,FOS_MADDPG_NOMA,5000,11.5,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,FOS_MADDPG_NOMA,6000,12.0,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,FOS_MADDPG_NOMA,7000,10.0,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,FOS_MADDPG_NOMA,8000,12.3,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,FOS_MADDPG_NOMA,9000,11.0,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,FOS_MADDPG_NOMA,9800,12.4,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,FOS_MADDPG_NOMA,last2000_mean,11.9,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MAPPO_NOMA,0,17.7,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MAPPO_NOMA,1000,17.0,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MAPPO_NOMA,2000,19.4,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MAPPO_NOMA,3000,18.0,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MAPPO_NOMA,4000,19.5,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MAPPO_NOMA,5000,18.5,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MAPPO_NOMA,6000,20.0,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MAPPO_NOMA,7000,18.0,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MAPPO_NOMA,8000,19.0,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MAPPO_NOMA,9000,20.0,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MAPPO_NOMA,9800,20.5,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MAPPO_NOMA,last2000_mean,19.7,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MADDPG_NOMA,0,22.3,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MADDPG_NOMA,1000,18.7,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MADDPG_NOMA,2000,18.2,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MADDPG_NOMA,3000,17.5,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MADDPG_NOMA,4000,17.8,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MADDPG_NOMA,5000,22.0,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MADDPG_NOMA,6000,23.0,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MADDPG_NOMA,7000,22.0,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MADDPG_NOMA,8000,23.0,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MADDPG_NOMA,9000,24.2,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MADDPG_NOMA,9800,24.2,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,a,POS_MADDPG_NOMA,last2000_mean,23.7,reward per episode (sum of 10 slots?),visual estimate from rendered page,1.0
+4,b,Local_Computing,900,61,success rate %,visual estimate from rendered page,2.0
+4,b,Local_Computing,2000,63.5,success rate %,visual estimate from rendered page,2.0
+4,b,Local_Computing,3000,65,success rate %,visual estimate from rendered page,2.0
+4,b,Local_Computing,4000,63,success rate %,visual estimate from rendered page,2.0
+4,b,Local_Computing,5000,64.5,success rate %,visual estimate from rendered page,2.0
+4,b,Local_Computing,6000,58,success rate %,visual estimate from rendered page,2.0
+4,b,Local_Computing,7000,59,success rate %,visual estimate from rendered page,2.0
+4,b,Local_Computing,8000,60,success rate %,visual estimate from rendered page,2.0
+4,b,Local_Computing,9000,63,success rate %,visual estimate from rendered page,2.0
+4,b,Local_Computing,9800,61,success rate %,visual estimate from rendered page,2.0
+4,b,Local_Computing,last2000_mean,61.7,success rate %,visual estimate from rendered page,2.0
+4,b,FOS_MADDPG_NOMA,900,47.5,success rate %,visual estimate from rendered page,2.0
+4,b,FOS_MADDPG_NOMA,2000,53.5,success rate %,visual estimate from rendered page,2.0
+4,b,FOS_MADDPG_NOMA,3000,61,success rate %,visual estimate from rendered page,2.0
+4,b,FOS_MADDPG_NOMA,4000,56,success rate %,visual estimate from rendered page,2.0
+4,b,FOS_MADDPG_NOMA,5000,64,success rate %,visual estimate from rendered page,2.0
+4,b,FOS_MADDPG_NOMA,6000,56,success rate %,visual estimate from rendered page,2.0
+4,b,FOS_MADDPG_NOMA,7000,56,success rate %,visual estimate from rendered page,2.0
+4,b,FOS_MADDPG_NOMA,8000,62,success rate %,visual estimate from rendered page,2.0
+4,b,FOS_MADDPG_NOMA,9000,58,success rate %,visual estimate from rendered page,2.0
+4,b,FOS_MADDPG_NOMA,9800,61,success rate %,visual estimate from rendered page,2.0
+4,b,FOS_MADDPG_NOMA,last2000_mean,59.5,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MAPPO_NOMA,900,57.5,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MAPPO_NOMA,2000,64,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MAPPO_NOMA,3000,62,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MAPPO_NOMA,4000,68,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MAPPO_NOMA,5000,66,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MAPPO_NOMA,6000,67,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MAPPO_NOMA,7000,67,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MAPPO_NOMA,8000,66,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MAPPO_NOMA,9000,71,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MAPPO_NOMA,9800,71.3,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MAPPO_NOMA,last2000_mean,69.5,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MADDPG_NOMA,900,71.5,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MADDPG_NOMA,2000,70.3,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MADDPG_NOMA,3000,72,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MADDPG_NOMA,4000,73,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MADDPG_NOMA,5000,81.5,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MADDPG_NOMA,6000,84,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MADDPG_NOMA,7000,83,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MADDPG_NOMA,8000,83,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MADDPG_NOMA,9000,86,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MADDPG_NOMA,9800,85.7,success rate %,visual estimate from rendered page,2.0
+4,b,POS_MADDPG_NOMA,last2000_mean,85.3,success rate %,visual estimate from rendered page,2.0
+4,c,Local_Computing,900,18.0,ms,visual estimate from rendered page,0.4
+4,c,Local_Computing,2000,18.6,ms,visual estimate from rendered page,0.4
+4,c,Local_Computing,3000,19.0,ms,visual estimate from rendered page,0.4
+4,c,Local_Computing,4000,18.3,ms,visual estimate from rendered page,0.4
+4,c,Local_Computing,5000,17.3,ms,visual estimate from rendered page,0.4
+4,c,Local_Computing,6000,18.0,ms,visual estimate from rendered page,0.4
+4,c,Local_Computing,7000,18.0,ms,visual estimate from rendered page,0.4
+4,c,Local_Computing,8000,19.2,ms,visual estimate from rendered page,0.4
+4,c,Local_Computing,9000,17.5,ms,visual estimate from rendered page,0.4
+4,c,Local_Computing,9800,18.8,ms,visual estimate from rendered page,0.4
+4,c,Local_Computing,last2000_mean,18.5,ms,visual estimate from rendered page,0.4
+4,c,FOS_MADDPG_NOMA,900,9.2,ms,visual estimate from rendered page,0.4
+4,c,FOS_MADDPG_NOMA,2000,8.0,ms,visual estimate from rendered page,0.4
+4,c,FOS_MADDPG_NOMA,3000,8.1,ms,visual estimate from rendered page,0.4
+4,c,FOS_MADDPG_NOMA,4000,8.0,ms,visual estimate from rendered page,0.4
+4,c,FOS_MADDPG_NOMA,5000,7.9,ms,visual estimate from rendered page,0.4
+4,c,FOS_MADDPG_NOMA,6000,8.5,ms,visual estimate from rendered page,0.4
+4,c,FOS_MADDPG_NOMA,7000,8.0,ms,visual estimate from rendered page,0.4
+4,c,FOS_MADDPG_NOMA,8000,8.3,ms,visual estimate from rendered page,0.4
+4,c,FOS_MADDPG_NOMA,9000,8.3,ms,visual estimate from rendered page,0.4
+4,c,FOS_MADDPG_NOMA,9800,8.1,ms,visual estimate from rendered page,0.4
+4,c,FOS_MADDPG_NOMA,last2000_mean,8.2,ms,visual estimate from rendered page,0.4
+4,c,POS_MAPPO_NOMA,900,10.0,ms,visual estimate from rendered page,0.4
+4,c,POS_MAPPO_NOMA,2000,11.8,ms,visual estimate from rendered page,0.4
+4,c,POS_MAPPO_NOMA,3000,10.5,ms,visual estimate from rendered page,0.4
+4,c,POS_MAPPO_NOMA,4000,11.5,ms,visual estimate from rendered page,0.4
+4,c,POS_MAPPO_NOMA,5000,11.3,ms,visual estimate from rendered page,0.4
+4,c,POS_MAPPO_NOMA,6000,11.5,ms,visual estimate from rendered page,0.4
+4,c,POS_MAPPO_NOMA,7000,11.0,ms,visual estimate from rendered page,0.4
+4,c,POS_MAPPO_NOMA,8000,11.5,ms,visual estimate from rendered page,0.4
+4,c,POS_MAPPO_NOMA,9000,12.2,ms,visual estimate from rendered page,0.4
+4,c,POS_MAPPO_NOMA,9800,12.5,ms,visual estimate from rendered page,0.4
+4,c,POS_MAPPO_NOMA,last2000_mean,12.0,ms,visual estimate from rendered page,0.4
+4,c,POS_MADDPG_NOMA,900,9.3,ms,visual estimate from rendered page,0.4
+4,c,POS_MADDPG_NOMA,2000,8.7,ms,visual estimate from rendered page,0.4
+4,c,POS_MADDPG_NOMA,3000,7.6,ms,visual estimate from rendered page,0.4
+4,c,POS_MADDPG_NOMA,4000,7.7,ms,visual estimate from rendered page,0.4
+4,c,POS_MADDPG_NOMA,5000,7.0,ms,visual estimate from rendered page,0.4
+4,c,POS_MADDPG_NOMA,6000,6.6,ms,visual estimate from rendered page,0.4
+4,c,POS_MADDPG_NOMA,7000,7.0,ms,visual estimate from rendered page,0.4
+4,c,POS_MADDPG_NOMA,8000,7.3,ms,visual estimate from rendered page,0.4
+4,c,POS_MADDPG_NOMA,9000,6.9,ms,visual estimate from rendered page,0.4
+4,c,POS_MADDPG_NOMA,9800,6.8,ms,visual estimate from rendered page,0.4
+4,c,POS_MADDPG_NOMA,last2000_mean,7.0,ms,visual estimate from rendered page,0.4
+4,d,Local_Computing,900,18.0,mW,visual estimate from rendered page,0.4
+4,d,Local_Computing,2000,18.6,mW,visual estimate from rendered page,0.4
+4,d,Local_Computing,3000,19.0,mW,visual estimate from rendered page,0.4
+4,d,Local_Computing,4000,18.3,mW,visual estimate from rendered page,0.4
+4,d,Local_Computing,5000,17.3,mW,visual estimate from rendered page,0.4
+4,d,Local_Computing,6000,18.0,mW,visual estimate from rendered page,0.4
+4,d,Local_Computing,7000,18.0,mW,visual estimate from rendered page,0.4
+4,d,Local_Computing,8000,19.2,mW,visual estimate from rendered page,0.4
+4,d,Local_Computing,9000,17.5,mW,visual estimate from rendered page,0.4
+4,d,Local_Computing,9800,18.8,mW,visual estimate from rendered page,0.4
+4,d,Local_Computing,last2000_mean,18.5,mW,visual estimate from rendered page,0.4
+4,d,FOS_MADDPG_NOMA,900,4.4,mW,visual estimate from rendered page,0.4
+4,d,FOS_MADDPG_NOMA,2000,4.5,mW,visual estimate from rendered page,0.4
+4,d,FOS_MADDPG_NOMA,3000,4.4,mW,visual estimate from rendered page,0.4
+4,d,FOS_MADDPG_NOMA,4000,4.0,mW,visual estimate from rendered page,0.4
+4,d,FOS_MADDPG_NOMA,5000,4.2,mW,visual estimate from rendered page,0.4
+4,d,FOS_MADDPG_NOMA,6000,4.2,mW,visual estimate from rendered page,0.4
+4,d,FOS_MADDPG_NOMA,7000,4.2,mW,visual estimate from rendered page,0.4
+4,d,FOS_MADDPG_NOMA,8000,4.0,mW,visual estimate from rendered page,0.4
+4,d,FOS_MADDPG_NOMA,9000,3.9,mW,visual estimate from rendered page,0.4
+4,d,FOS_MADDPG_NOMA,9800,4.2,mW,visual estimate from rendered page,0.4
+4,d,FOS_MADDPG_NOMA,last2000_mean,4.2,mW,visual estimate from rendered page,0.4
+4,d,POS_MAPPO_NOMA,900,9.2,mW,visual estimate from rendered page,0.4
+4,d,POS_MAPPO_NOMA,2000,10.8,mW,visual estimate from rendered page,0.4
+4,d,POS_MAPPO_NOMA,3000,9.6,mW,visual estimate from rendered page,0.4
+4,d,POS_MAPPO_NOMA,4000,10.7,mW,visual estimate from rendered page,0.4
+4,d,POS_MAPPO_NOMA,5000,10.5,mW,visual estimate from rendered page,0.4
+4,d,POS_MAPPO_NOMA,6000,11.0,mW,visual estimate from rendered page,0.4
+4,d,POS_MAPPO_NOMA,7000,10.1,mW,visual estimate from rendered page,0.4
+4,d,POS_MAPPO_NOMA,8000,10.8,mW,visual estimate from rendered page,0.4
+4,d,POS_MAPPO_NOMA,9000,11.0,mW,visual estimate from rendered page,0.4
+4,d,POS_MAPPO_NOMA,9800,11.4,mW,visual estimate from rendered page,0.4
+4,d,POS_MAPPO_NOMA,last2000_mean,11.0,mW,visual estimate from rendered page,0.4
+4,d,POS_MADDPG_NOMA,900,5.4,mW,visual estimate from rendered page,0.4
+4,d,POS_MADDPG_NOMA,2000,5.4,mW,visual estimate from rendered page,0.4
+4,d,POS_MADDPG_NOMA,3000,5.6,mW,visual estimate from rendered page,0.4
+4,d,POS_MADDPG_NOMA,4000,5.3,mW,visual estimate from rendered page,0.4
+4,d,POS_MADDPG_NOMA,5000,5.3,mW,visual estimate from rendered page,0.4
+4,d,POS_MADDPG_NOMA,6000,4.6,mW,visual estimate from rendered page,0.4
+4,d,POS_MADDPG_NOMA,7000,5.2,mW,visual estimate from rendered page,0.4
+4,d,POS_MADDPG_NOMA,8000,5.3,mW,visual estimate from rendered page,0.4
+4,d,POS_MADDPG_NOMA,9000,5.5,mW,visual estimate from rendered page,0.4
+4,d,POS_MADDPG_NOMA,9800,5.7,mW,visual estimate from rendered page,0.4
+4,d,POS_MADDPG_NOMA,last2000_mean,5.4,mW,visual estimate from rendered page,0.4
+5,a,Local_Computing,2,60.6,success rate %,visual estimate from rendered page,1.0
+5,a,Local_Computing,4,62.5,success rate %,visual estimate from rendered page,1.0
+5,a,Local_Computing,6,61.0,success rate %,visual estimate from rendered page,1.0
+5,a,Local_Computing,8,61.3,success rate %,visual estimate from rendered page,1.0
+5,a,Local_Computing,10,61.4,success rate %,visual estimate from rendered page,1.0
+5,a,Local_Computing,12,61.4,success rate %,visual estimate from rendered page,1.0
+5,a,FOS_MADDPG_NOMA,2,100,success rate %,visual estimate from rendered page,1.0
+5,a,FOS_MADDPG_NOMA,4,95.7,success rate %,visual estimate from rendered page,1.0
+5,a,FOS_MADDPG_NOMA,6,87.2,success rate %,visual estimate from rendered page,1.0
+5,a,FOS_MADDPG_NOMA,8,80.9,success rate %,visual estimate from rendered page,1.0
+5,a,FOS_MADDPG_NOMA,10,69.2,success rate %,visual estimate from rendered page,1.0
+5,a,FOS_MADDPG_NOMA,12,64.1,success rate %,visual estimate from rendered page,1.0
+5,a,POS_MAPPO_NOMA,2,95.9,success rate %,visual estimate from rendered page,1.0
+5,a,POS_MAPPO_NOMA,4,78.7,success rate %,visual estimate from rendered page,1.0
+5,a,POS_MAPPO_NOMA,6,77.1,success rate %,visual estimate from rendered page,1.0
+5,a,POS_MAPPO_NOMA,8,71.2,success rate %,visual estimate from rendered page,1.0
+5,a,POS_MAPPO_NOMA,10,65.3,success rate %,visual estimate from rendered page,1.0
+5,a,POS_MAPPO_NOMA,12,62.7,success rate %,visual estimate from rendered page,1.0
+5,a,POS_MADDPG_NOMA,2,99.6,success rate %,visual estimate from rendered page,1.0
+5,a,POS_MADDPG_NOMA,4,93.3,success rate %,visual estimate from rendered page,1.0
+5,a,POS_MADDPG_NOMA,6,92.7,success rate %,visual estimate from rendered page,1.0
+5,a,POS_MADDPG_NOMA,8,85.5,success rate %,visual estimate from rendered page,1.0
+5,a,POS_MADDPG_NOMA,10,78.0,success rate %,visual estimate from rendered page,1.0
+5,a,POS_MADDPG_NOMA,12,71.2,success rate %,visual estimate from rendered page,1.0
+5,b,Local_Computing,2,17.2,ms,visual estimate from rendered page,0.3
+5,b,Local_Computing,4,18.1,ms,visual estimate from rendered page,0.3
+5,b,Local_Computing,6,18.2,ms,visual estimate from rendered page,0.3
+5,b,Local_Computing,8,18.8,ms,visual estimate from rendered page,0.3
+5,b,Local_Computing,10,19.0,ms,visual estimate from rendered page,0.3
+5,b,Local_Computing,12,18.8,ms,visual estimate from rendered page,0.3
+5,b,FOS_MADDPG_NOMA,2,0.55,ms,visual estimate from rendered page,0.3
+5,b,FOS_MADDPG_NOMA,4,2.8,ms,visual estimate from rendered page,0.3
+5,b,FOS_MADDPG_NOMA,6,6.2,ms,visual estimate from rendered page,0.3
+5,b,FOS_MADDPG_NOMA,8,8.1,ms,visual estimate from rendered page,0.3
+5,b,FOS_MADDPG_NOMA,10,9.9,ms,visual estimate from rendered page,0.3
+5,b,FOS_MADDPG_NOMA,12,10.9,ms,visual estimate from rendered page,0.3
+5,b,POS_MAPPO_NOMA,2,3.9,ms,visual estimate from rendered page,0.3
+5,b,POS_MAPPO_NOMA,4,7.7,ms,visual estimate from rendered page,0.3
+5,b,POS_MAPPO_NOMA,6,8.2,ms,visual estimate from rendered page,0.3
+5,b,POS_MAPPO_NOMA,8,12.5,ms,visual estimate from rendered page,0.3
+5,b,POS_MAPPO_NOMA,10,15.2,ms,visual estimate from rendered page,0.3
+5,b,POS_MAPPO_NOMA,12,16.9,ms,visual estimate from rendered page,0.3
+5,b,POS_MADDPG_NOMA,2,1.1,ms,visual estimate from rendered page,0.3
+5,b,POS_MADDPG_NOMA,4,4.5,ms,visual estimate from rendered page,0.3
+5,b,POS_MADDPG_NOMA,6,5.05,ms,visual estimate from rendered page,0.3
+5,b,POS_MADDPG_NOMA,8,7.4,ms,visual estimate from rendered page,0.3
+5,b,POS_MADDPG_NOMA,10,9.1,ms,visual estimate from rendered page,0.3
+5,b,POS_MADDPG_NOMA,12,10.25,ms,visual estimate from rendered page,0.3

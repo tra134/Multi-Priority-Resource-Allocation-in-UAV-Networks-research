@@ -1,284 +1,173 @@
-"""Tests for the Gymnasium UAV environment (plan.md Phase 2).
-
-- check_env from Gymnasium passes.
-- Sum of bandwidth/power shares equals 1 (within 1e-6) for random actions.
-- Queue never negative; queue update matches the formula on a hand-computed
-  example.
-- Same seed gives identical trajectories.
-- Speed benchmark: >= 20,000 env steps/s with random actions.
-"""
-
-from __future__ import annotations
-
-import time
-
 import numpy as np
 import pytest
-from gymnasium.utils.env_checker import check_env
 
-from uavrl.env.uav_env import UAVEnv
-from uavrl.env.channel import rate
-
-DEFAULT_CONFIG = {
-    "timing": {"slot_ms": 5.0, "episode_slots": 200},
-    "channel": {"B_max": 1.0e7, "P_max": 1.0, "H": 100.0, "fc": 2.0e9},
-    "traffic": {
-        "emergency_mean_mbps": 0.5,
-        "important_mean_mbps": 8.0,
-        "normal_mean_mbps": 6.0,
-        "queue_cap_mbit": 2.0,
-    },
-    "reward": {"w_emg": 1.0, "w_imp": 0.5, "w_norm": 0.1, "lambda_pen": 5.0},
-}
+from uavmec.config import LinConfig
+from uavmec.env.lin_env import LinMECEnv
+from uavmec.env.types import SensorAction
 
 
-def make_env(**kw):
-    cfg = dict(DEFAULT_CONFIG)
-    cfg.update(kw)
-    return UAVEnv(config=cfg)
+def _rand_actions(env, rng, fos=False):
+    cfg = env.cfg
+    lo = 1 if fos else 0
+    return [
+        SensorAction(
+            int(rng.integers(lo, cfg.n_uavs + 1)),
+            int(rng.integers(cfg.n_subcarriers)),
+            float(rng.uniform()),
+            float(rng.uniform()),
+        )
+        for _ in range(cfg.n_sensors)
+    ]
 
 
-def _softmax(x):
-    x = np.asarray(x, dtype=float)
-    x = x - np.max(x)
-    e = np.exp(x)
-    return e / e.sum()
-
-
-def test_check_env():
-    env = make_env()
-    check_env(env, skip_render_check=True)
-
-
-def test_observation_and_action_spaces():
-    env = make_env()
-    obs, _ = env.reset(seed=0)
-    assert obs.shape == (17,)
-    action = env.action_space.sample()
-    assert action.shape == (6,)
-    assert np.all(action >= -1.0) and np.all(action <= 1.0)
-
-
-def test_shares_sum_to_one():
-    env = make_env()
-    obs, _ = env.reset(seed=0)
-    for _ in range(100):
-        action = env.action_space.sample()
-        obs, _, terminated, truncated, _ = env.step(action)
-        b_share = _softmax(3.0 * action[:3])
-        p_share = _softmax(3.0 * action[3:])
-        assert abs(b_share.sum() - 1.0) < 1e-6
-        assert abs(p_share.sum() - 1.0) < 1e-6
-        if terminated or truncated:
-            obs, _ = env.reset(seed=0)
-
-
-def test_queue_never_negative():
-    env = make_env()
-    obs, _ = env.reset(seed=0)
+def _run(env, seed, fos=False):
+    rng = np.random.default_rng(123)
+    obs, _ = env.reset(seed)
+    traj = [np.concatenate(obs)]
+    rewards = []
     done = False
     while not done:
-        action = env.action_space.sample()
-        obs, _, terminated, truncated, info = env.step(action)
-        assert np.all(info["queue_bits"] >= -1e-9)
-        done = terminated or truncated
+        obs, r, _, trunc, _ = env.step(_rand_actions(env, rng, fos))
+        traj.append(np.concatenate(obs))
+        rewards.append(r)
+        done = trunc
+    return np.array(traj), np.array(rewards)
 
 
-def test_queue_update_matches_formula(monkeypatch):
-    env = make_env()
-    env.reset(seed=0)
-    dt = env.dt
-    # Pin channel gain (constant) and arrivals: 1000 bits to Emergency only.
-    env.channel.update = lambda shadow_db=0.0: np.array([1e-3, 1e-3, 1e-3])
-    env.traffic.arrivals_bits = lambda dt, multipliers=None: np.array(
-        [1000.0, 0.0, 0.0]
-    )
-    env.queue_bits = np.array([10000.0, 0.0, 0.0])
-    env.step(np.zeros(6))
-    # Softmax(0) = 1/3 for all classes -> b = B_max/3, p = P_max/3.
-    served = float(env.rates_bps[0]) * dt
-    expected = min(max(0.0, 10000.0 - served) + 1000.0, env.queue_cap_bits)
-    assert abs(env.queue_bits[0] - expected) < 1e-6
+def test_shapes_and_attributes():
+    cfg = LinConfig()
+    env = LinMECEnv(cfg)
+    obs, info = env.reset(0)
+    assert len(obs) == env.n_agents == 8
+    assert all(o.shape == (env.obs_dim,) for o in obs)
+    assert info["state"].shape == (env.state_dim,)
+    assert env.sensor_pos.shape == (8, 2) and env.uav_pos.shape == (2, 2)
+    assert env.task_sizes.shape == env.task_deadlines.shape == env.battery.shape == (8,)
+    assert env.uav_battery.shape == (2,) and env.channel_gain.shape == (8, 2)
+    assert env.t == 0
 
 
-def test_same_seed_identical():
-    def run(seed):
-        env = make_env()
-        obs, _ = env.reset(seed=seed)
-        qs = []
-        done = False
-        while not done:
-            action = env.action_space.sample()
-            obs, _, terminated, truncated, info = env.step(action)
-            qs.append(info["queue_bits"].copy())
-            done = terminated or truncated
-        return np.array(qs)
-
-    q1 = run(42)
-    q2 = run(42)
-    assert np.allclose(q1, q2)
-    q3 = run(7)
-    assert not np.allclose(q1, q3)
+def test_observation_normalized():
+    env = LinMECEnv(LinConfig())
+    obs, _ = env.reset(3)
+    for o in obs:
+        assert o.min() >= 0.0 and o.max() <= 1.0 + 1e-6
 
 
-def test_speed_benchmark():
-    """Bare-environment speed (no agent).  plan.md targets >= 20,000 steps/s;
-
-    measured ~6k-8k steps/s on this hardware (decision logged in
-    docs/decision_log.md).  We assert a regression floor instead so the suite
-    stays green while the target is pursued (e.g. on Colab GPU or a compiled
-    hot path).
-    """
-    env = make_env(config={"timing": {"slot_ms": 5.0, "episode_slots": 2000}})
-    obs, _ = env.reset(seed=0)
-    n = 10000
-    t0 = time.perf_counter()
-    for _ in range(n):
-        action = env.action_space.sample()
-        obs, _, terminated, truncated, _ = env.step(action)
-        if terminated or truncated:
-            obs, _ = env.reset(seed=0)
-    dt = time.perf_counter() - t0
-    steps_per_s = n / dt
-    print(f"\nspeed benchmark: {steps_per_s:,.0f} env steps/s (target 20,000)")
-    assert steps_per_s >= 3000, f"env too slow: {steps_per_s:,.0f} steps/s"
+def test_determinism_and_different_seeds():
+    env = LinMECEnv(LinConfig())
+    a, ra = _run(env, 7)
+    b, rb = _run(env, 7)
+    c, _ = _run(env, 8)
+    assert np.array_equal(a, b) and np.array_equal(ra, rb)
+    assert not np.array_equal(a, c)
 
 
-def test_reward_finite():
-    env = make_env()
-    obs, _ = env.reset(seed=0)
-    for _ in range(50):
-        obs, r, terminated, truncated, _ = env.step(env.action_space.sample())
-        assert np.isfinite(r)
-        if terminated or truncated:
-            obs, _ = env.reset(seed=0)
+def test_truncation_at_T_and_rewards():
+    cfg = LinConfig()
+    env = LinMECEnv(cfg)
+    rng = np.random.default_rng(0)
+    env.reset(0)
+    for t in range(cfg.n_slots):
+        _, r, term, trunc, info = env.step(_rand_actions(env, rng))
+        assert term is False
+        assert trunc == (t == cfg.n_slots - 1)
+        assert set(np.unique(r)).issubset({-1.0, 3.0})
+        assert r.shape == (8,)
+        assert len(info["outcomes"]) == 8 and info["uav_energy_j"].shape == (2,)
+        for rew, o in zip(r, info["outcomes"]):
+            assert rew == (3.0 if o.success else -1.0)
+            assert (o.fail_reason is None) == o.success
+    assert env.t == cfg.n_slots
 
 
-def test_time_limit_is_truncation_not_termination():
-    """F16: reaching the episode length must not look like a terminal state."""
-    env = make_env()
-    env.reset(seed=0)
-    last = None
-    for _ in range(env.episode_slots):
-        last = env.step(env.action_space.sample())
-    _, _, terminated, truncated, _ = last
-    assert truncated is True
-    assert terminated is False
+def test_fos_rejects_target_zero_and_pos_accepts():
+    env = LinMECEnv(LinConfig(), mode="FOS")
+    env.reset(0)
+    acts = [SensorAction(1)] * 7 + [SensorAction(0)]
+    with pytest.raises(ValueError):
+        env.step(acts)
+    traj, _ = _run(env, 1, fos=True)
+    assert len(traj) == LinConfig().n_slots + 1
+    pos = LinMECEnv(LinConfig(), mode="POS")
+    pos.reset(0)
+    pos.step([SensorAction(0)] * 8)
 
 
-def test_reward_depends_on_normal_throughput():
-    """F7: r_norm must change with the Normal rate (it used to be constant 1)."""
-    def reward_for(normal_share):
-        env = make_env()
-        env.reset(seed=3)
-        env.channel.update = lambda shadow_db=0.0: np.array([1e-13] * 3)  # weak: rate stays below the cap
-        env.traffic.arrivals_bits = lambda dt, multipliers=None: np.zeros(3)
-        # Same Emergency/Important shares in both runs; only Normal differs.
-        rest = (1.0 - normal_share) / 2.0
-        b = np.array([rest, rest, normal_share])
-        action = np.concatenate([np.log(b) / 3.0, np.log(b) / 3.0])
-        _, r, *_ = env.step(action)
-        return r
-
-    assert reward_for(0.8) != reward_for(0.05)
+def test_invalid_actions():
+    env = LinMECEnv(LinConfig())
+    env.reset(0)
+    with pytest.raises(ValueError):
+        env.step([SensorAction(3)] * 8)
+    with pytest.raises(ValueError):
+        env.step([SensorAction(1, subcarrier=4)] * 8)
+    with pytest.raises(ValueError):
+        env.step([SensorAction(1, power_frac=1.5)] * 8)
+    with pytest.raises(ValueError):
+        env.step([SensorAction(1)] * 7)
 
 
-def test_reward_references_follow_configured_load():
-    env = make_env()
-    assert env.R_norm_ref == 6.0e6          # normal_mean_mbps in the test config
-    assert env.R_target == 0.75 * 8.0e6     # 75% of the important load
+@pytest.mark.parametrize("n", [2, 4, 6, 8, 10, 12])
+def test_sensor_counts_run(n):
+    env = LinMECEnv(LinConfig(n_sensors=n))
+    _, rewards = _run(env, 0)
+    assert rewards.shape == (10, n)
+    assert env.obs_dim == 15
 
 
-# ---------------------------------------------------------------- Stage 2, task 1.2
-import importlib.util  # noqa: E402
-from pathlib import Path  # noqa: E402
-
-import yaml  # noqa: E402
-
-from uavrl.env.scenarios import make_scenario  # noqa: E402
-
-_ROOT = Path(__file__).resolve().parents[1]
-# Reward block pinned here on purpose: a later, logged reward retune must not
-# invalidate this test, which only guards that logging does not alter the dynamics.
-_PINNED_REWARD = {"w_emg": 1.0, "w_imp": 0.5, "w_norm": 0.1, "lambda_pen": 5.0,
-                  "R_target": 26.25e6, "R_norm_ref": 28.0e6}
-# Recorded with the code BEFORE the logging fields were added.
-_GOLDEN = {
-    "S0": {
-        "reward_sum": -1030.2589484661505,
-        "reward_last": 0.11852084542241226,
-        "queue_sum": 17983640.97508584,
-        "delay_sum": 8.82209793085076,
-        "obs_sum": 9.657426834106445
-    },
-    "S1": {
-        "reward_sum": -3441.664220079598,
-        "reward_last": 0.12231102665355656,
-        "queue_sum": 48917659.707874,
-        "delay_sum": 21.664184551760215,
-        "obs_sum": 9.620977401733398
-    },
-    "S4": {
-        "reward_sum": -10675.963767295338,
-        "reward_last": 0.12231102665355656,
-        "queue_sum": 453780923.66395885,
-        "delay_sum": 180.8452414404219,
-        "obs_sum": 9.620977401733398
-    }
-}
+def test_energy_accounting():
+    cfg = LinConfig()
+    env = LinMECEnv(cfg)
+    rng = np.random.default_rng(4)
+    env.reset(2)
+    for _ in range(cfg.n_slots):
+        before = env.battery.copy()
+        _, _, _, _, info = env.step(_rand_actions(env, rng))
+        spent = np.array([o.energy_j for o in info["outcomes"]])
+        assert np.allclose(before - env.battery, spent)
+        assert (spent >= 0).all()
 
 
-def _golden_cfg():
-    cfg = yaml.safe_load((_ROOT / "configs" / "default.yaml").read_text())
-    cfg["reward"] = dict(_PINNED_REWARD)
-    cfg["traffic"] = {**cfg["traffic"], "emergency_mean_mbps": 2.0,
-                      "important_mean_mbps": 35.0, "normal_mean_mbps": 28.0}
-    return cfg
+def test_local_outcome_values():
+    cfg = LinConfig()
+    env = LinMECEnv(cfg)
+    env.reset(0)
+    bits = env.task_sizes.copy()
+    _, _, _, _, info = env.step([SensorAction(0)] * 8)
+    for o, b in zip(info["outcomes"], bits):
+        assert o.mode == "local"
+        assert np.isclose(o.latency_s, b * cfg.c_cyc / 1e9)
+        assert np.isclose(o.energy_j, b * cfg.c_cyc * cfg.kappa * 1e18)
+        assert o.success == (o.latency_s <= o.deadline_s)
 
 
-def test_logging_does_not_change_rewards_or_dynamics():
-    cfg = _golden_cfg()
-    for sid, want in _GOLDEN.items():
-        env = UAVEnv(config=cfg, scenario=make_scenario(sid, 12345), seed=12345)
-        env.reset(seed=12345)
-        rng = np.random.default_rng(7)
-        rewards, queues, delays = [], [], []
-        for _ in range(1600):
-            obs, r, _, _, info = env.step(rng.uniform(-1, 1, 6))
-            rewards.append(r)
-            queues.append(float(info["queue_bits"][0]))
-            delays.append(float(info["delay_s"][0]))
-        assert np.sum(rewards) == pytest.approx(want["reward_sum"], rel=1e-9), sid
-        assert rewards[-1] == pytest.approx(want["reward_last"], rel=1e-9), sid
-        assert np.sum(queues) == pytest.approx(want["queue_sum"], rel=1e-9), sid
-        assert np.sum(delays) == pytest.approx(want["delay_sum"], rel=1e-9), sid
-        assert np.sum(obs) == pytest.approx(want["obs_sum"], rel=1e-6), sid
+def test_sic_beats_nosic_on_shared_subcarrier():
+    acts = [SensorAction(1, 0, 1.0, 1.0)] * 8
+    succ = {}
+    for sic in (True, False):
+        env = LinMECEnv(LinConfig(), sic=sic)
+        env.reset(0)
+        _, _, _, _, info = env.step(acts)
+        succ[sic] = sum(o.success for o in info["outcomes"])
+    assert succ[True] >= succ[False]
 
 
-def test_logged_reward_terms_recombine_to_the_reward():
-    env = make_env()
-    env.reset(seed=1)
-    c = env.config["reward"]
-    for _ in range(50):
-        _, r, _, _, info = env.step(env.action_space.sample())
-        t = info["reward_terms"]
-        assert r == pytest.approx(
-            c["w_emg"] * t["r_emg"] + c["w_imp"] * t["r_imp"] + c["w_norm"] * t["r_norm"]
-            - t["penalty"], rel=1e-9, abs=1e-12)
-        assert abs(sum(info["b_share"]) - 1.0) < 1e-9 and abs(sum(info["p_share"]) - 1.0) < 1e-9
+def test_uavs_hover_and_no_mobility_option():
+    from uavmec.config import load_config
+
+    assert not hasattr(load_config(), "uav_mobility")  # A-13
+    env = LinMECEnv(LinConfig())
+    env.reset(0)
+    start = env.uav_pos.copy()
+    done = False
+    while not done:
+        _, _, _, done, info = env.step([SensorAction(0)] * 8)
+        assert np.array_equal(env.uav_pos, start)
+    assert (info["uav_energy_j"] > 0).all()
 
 
-def test_new_metric_columns_exist_in_the_grid_schema():
-    spec = importlib.util.spec_from_file_location("rg", _ROOT / "scripts" / "run_grid.py")
-    rg = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(rg)
-    from uavrl.eval.metrics import episode_metrics
-    from uavrl.eval.runner import run_episode
-
-    env = make_env()
-    steps, _ = run_episode(env, lambda o, i: np.zeros(6), seed=0)
-    m = episode_metrics(steps)
-    for col in ("mean_b_share_emg", "mean_p_share_emg", "mean_r_emg", "mean_r_imp",
-                "mean_r_norm", "mean_penalty"):
-        assert col in m and col in rg.FIELDS, col
-    assert abs(m["mean_b_share_emg"] - 1.0 / 3.0) < 1e-9     # zero action = equal shares
+def test_uav_min_separation():
+    env = LinMECEnv(LinConfig())
+    for s in range(20):
+        env.reset(s)
+        assert np.linalg.norm(env.uav_pos[0] - env.uav_pos[1]) >= env.cfg.d_safe_m
