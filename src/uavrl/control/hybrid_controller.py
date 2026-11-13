@@ -315,9 +315,12 @@ class HybridController:
             if trigger and self.cooldown_counter == 0:
                 self.calls += 1
                 llm_called_this_slot = True
-                features = self._build_features(obs, info,
-                                                "uncertainty" if trig_unc else
-                                                "queue" if trig_queue else "mixed")
+                if self.trigger_mode in ("uncertainty", "queue"):
+                    reason_tag = self.trigger_mode  # single-condition ablation
+                else:
+                    reason_tag = ("uncertainty" if trig_unc else
+                                  "queue" if trig_queue else "mixed")
+                features = self._build_features(obs, info, reason_tag)
                 cur_mask = None
                 if self.active_mask is not None:
                     cur_mask = {"bw_floor": self.active_mask.bw_floor.tolist(),

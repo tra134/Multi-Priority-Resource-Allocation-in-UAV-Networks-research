@@ -135,6 +135,7 @@ METHODS = {
 FIELDS = [
     "method", "method_label", "scenario", "scenario_name", "seed", "episode",
     "eval_seed", "slots", "client", "n_critics", "trigger_mode",
+    "failure_prob", "failure_kind", "trigger_ablation", "debounce_m",
     "sos_violation_ood", "sos_violation_recovery", "sos_violation_episode",
     "sos_p99_delay_s", "sos_p99_delay_ood_s", "mean_delay_emg_s", "mean_reward",
     "delivered_emg_mbps", "delivered_imp_mbps", "delivered_norm_mbps",
@@ -189,6 +190,40 @@ def benchmark_policy(policy, n=100):
         policy(obs, info)
         times.append((time.perf_counter() - t0) * 1000.0)
     return float(np.median(times))
+
+
+FAILURE_KINDS = {
+    "invalid_json": "p_invalid_json",
+    "out_of_range": "p_out_of_range",
+    "wrong_diagnosis": "p_wrong_diagnosis",
+    "timeout": "p_timeout",
+}
+TRIGGER_ABLATIONS = {"none": None, "unc_only": "uncertainty", "queue_only": "queue"}
+
+
+def check_failure_args(failure_prob, failure_kind, llm):
+    """E5: failure injection is a mock-only experiment."""
+    if not 0.0 <= failure_prob <= 1.0:
+        raise SystemExit("--failure-prob must be in [0, 1]")
+    if failure_prob > 0.0:
+        if llm != "mock":
+            raise SystemExit("--failure-prob is only valid with --llm mock")
+        if failure_kind is None:
+            raise SystemExit("--failure-prob > 0 needs --failure-kind")
+
+
+def failure_injection_for(failure_prob, failure_kind):
+    """MockLLM failure_injection dict; empty when no failure is requested."""
+    if failure_prob <= 0.0 or failure_kind is None:
+        return {}
+    return {FAILURE_KINDS[failure_kind]: float(failure_prob)}
+
+
+def resolve_trigger(spec_trigger, ablation):
+    """E3: the ablation only changes M12's hybrid trigger."""
+    if spec_trigger == "hybrid" and TRIGGER_ABLATIONS[ablation] is not None:
+        return TRIGGER_ABLATIONS[ablation]
+    return spec_trigger
 
 
 def parse_list(value):
@@ -268,12 +303,26 @@ def main():
                         help="per-checkpoint tau_unc, theta_queue, M8 rate, M9 K")
     parser.add_argument("--rule-theta", type=float, default=None,
                         help="Rule-Shield threshold; default = calibrated theta_queue")
+    parser.add_argument("--failure-prob", type=float, default=0.0,
+                        help="E5: per-call failure probability (mock LLM only)")
+    parser.add_argument("--failure-kind", default=None, choices=list(FAILURE_KINDS),
+                        help="E5: which failure the mock LLM injects")
+    parser.add_argument("--trigger-ablation", default="none",
+                        choices=list(TRIGGER_ABLATIONS),
+                        help="E3: run the hybrid trigger as uncertainty-only or queue-only")
+    parser.add_argument("--debounce-m", type=int, default=None,
+                        help="E3: consecutive slots above tau_unc (1 = no debounce); "
+                             "default = trigger.debounce_m from the config")
     parser.add_argument("--resume", action="store_true", default=True)
     parser.add_argument("--no-resume", dest="resume", action="store_false")
     args = parser.parse_args()
 
     if args.episodes > MAX_EPISODES:
         raise SystemExit(f"--episodes must be <= {MAX_EPISODES}")
+
+    check_failure_args(args.failure_prob, args.failure_kind, args.llm)
+    if args.debounce_m is not None and args.debounce_m < 1:
+        raise SystemExit("--debounce-m must be >= 1")
 
     load_env()
     with open(args.config, encoding="utf-8") as f:
@@ -366,9 +415,14 @@ def main():
         stress = SCENARIOS[scenario_id]["latency"] == "stress"
         return stress_latency if stress else nominal_latency
 
+    failure_injection = failure_injection_for(args.failure_prob, args.failure_kind)
+    debounce_m = (args.debounce_m if args.debounce_m is not None
+                  else int(trigger_cfg.get("debounce_m", 3)))
+
     def make_client(method_name, spec, eval_seed):
         if client_kind_for(spec) == "mock":
             return MockLLMClient(
+                failure_injection=failure_injection,
                 latency_median_ms=nominal_latency, latency_sigma=latency_sigma,
                 rng=np.random.default_rng(eval_seed),
             )
@@ -403,6 +457,10 @@ def main():
                   "calibration_used": calib_record,
                   "cooldown": cooldown, "ttl_slots": ttl_slots,
                   "rule_theta_override": args.rule_theta,
+                  "failure_prob": args.failure_prob,
+                  "failure_kind": args.failure_kind,
+                  "trigger_ablation": args.trigger_ablation,
+                  "debounce_m": debounce_m,
                   "llm_model": llm_cfg.get("model") if "real" in kinds else None},
             files=["configs/default.yaml", "configs/scenarios.yaml", "configs/llm.yaml",
                    args.calibration],
@@ -462,6 +520,9 @@ def main():
                         "scenario": scenario_id, "scenario_name": scenario_spec["name"],
                         "seed": seed, "episode": episode, "eval_seed": eval_seed,
                         "slots": slots, "client": client_kind_for(spec),
+                        "failure_prob": args.failure_prob,
+                        "failure_kind": args.failure_kind or "",
+                        "trigger_ablation": args.trigger_ablation,
                     })
 
                     t0 = time.perf_counter()
@@ -509,13 +570,14 @@ def main():
                     else:  # LLM controller
                         agent = get_agent(MASK_N10, seed)
                         client = make_client(method_name, spec, eval_seed)
-                        trigger = spec["trigger"]
+                        trigger = resolve_trigger(spec["trigger"], args.trigger_ablation)
+                        row["debounce_m"] = debounce_m
                         ctrl = HybridController(
                             agent, env, client, cfg,
                             trigger_mode=trigger,
                             tau_unc=params.get("tau_unc"),
                             theta_queue=params.get("theta_queue"),
-                            debounce_m=int(trigger_cfg.get("debounce_m", 3)),
+                            debounce_m=debounce_m,
                             cooldown=0 if trigger in ("periodic", "always", "random")
                             else cooldown,
                             ttl_slots=ttl_slots,
