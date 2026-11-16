@@ -1,11 +1,13 @@
 # Training hyperparameters for the Lin et al. 2025 reproduction (docs/lin2025_spec.md Section 10).
-# A-23 values are provisional and locked by the A-39 pilot (docs/lin2025_spec.md Section 6).
-# Tags: P = paper location, A-23 = provisional assumption (locked by the A-39 pilot).
+# A-23 values were locked on 2026-11-16 by the A-39 pilot (docs/lin2025_spec.md Section 6, TE-033).
+# Tags: P = value stated by Lin et al. (paper location); A-23 = our value, the paper does not state it.
 
-episodes: 10000      # A-23 (provisional, locked by the A-39 pilot); Fig. 4 axis
-eval_every: 500      # A-23 (provisional, locked by the A-39 pilot)
-eval_episodes: 20    # A-23 (provisional, locked by the A-39 pilot); validation seeds 2000.. (A-36)
-ckpt_every: 500      # A-23 (provisional, locked by the A-39 pilot)
+episodes: 20000      # A-23 (locked): both MADDPG and MAPPO. NOT a Lin et al. value (their Fig. 4 axis
+                     # shows 10000). A-39 pilot: MADDPG failed T1 at 10000 and passed at 20000; equal
+                     # budget for MAPPO by HUMAN decision 2026-11-16 (MAPPO pilot checked only at 10000)
+eval_every: 500      # A-23 (locked)
+eval_episodes: 20    # A-23 (locked); validation seeds 2000.. (A-36)
+ckpt_every: 500      # A-23 (locked)
 
 maddpg:
   batch: 320               # P: Section 6.1 hyperparameters
@@ -13,12 +15,13 @@ maddpg:
   critic_lr: 5.0e-5        # P: Section 6.1
   buffer: 131072           # P: Section 6.1 (2^17)
   gamma: 0.9               # P: Section 6.1
-  tau_soft: 0.01           # A-23 (provisional, locked by the A-39 pilot)
-  warmup: 1000             # A-23 (provisional, locked by the A-39 pilot); transitions before updates
-  gumbel_tau: 1.0          # A-23 (provisional, locked by the A-39 pilot)
-  noise_sigma_start: 0.1   # A-23 (provisional, locked by the A-39 pilot)
-  noise_sigma_end: 0.01    # A-23 (provisional, locked by the A-39 pilot)
-  noise_decay_steps: 50000 # A-23 (provisional, locked by the A-39 pilot); half of 10000 episodes x 10 steps
+  tau_soft: 0.01           # A-23 (locked)
+  warmup: 1000             # A-23 (locked); transitions before updates
+  gumbel_tau: 1.0          # A-23 (locked)
+  noise_sigma_start: 0.1   # A-23 (locked)
+  noise_sigma_end: 0.01    # A-23 (locked)
+  noise_decay_steps: 50000 # A-23 (locked); fixed number of env steps (first 5000 episodes x 10 steps);
+                           # NOT rescaled to 20000 episodes: A-39 allowed only the episode count to change
   actor_hidden: 128        # P: Fig. 3 (ReLU6)
   critic_hidden: [64, 32]  # P: Fig. 3
 
@@ -26,11 +29,11 @@ mappo:
   actor_lr: 3.0e-4         # P: Section 6.1 (same as MADDPG, A-23)
   critic_lr: 5.0e-5        # P: Section 6.1 (same as MADDPG, A-23)
   gamma: 0.9               # P: Section 6.1
-  gae_lambda: 0.95         # A-23 (provisional, locked by the A-39 pilot)
-  clip: 0.2                # A-23 (provisional, locked by the A-39 pilot)
-  epochs: 10               # A-23 (provisional, locked by the A-39 pilot)
-  minibatch: 320           # A-23 (provisional, locked by the A-39 pilot); P batch 320 reused
-  rollout_episodes: 32     # A-23 (provisional, locked by the A-39 pilot)
+  gae_lambda: 0.95         # A-23 (locked)
+  clip: 0.2                # A-23 (locked)
+  epochs: 10               # A-23 (locked)
+  minibatch: 320           # A-23 (locked); P batch 320 reused
+  rollout_episodes: 32     # A-23 (locked)
   actor_hidden: 128        # P: Fig. 3 (ReLU6)
   critic_hidden: [64, 32]  # P: Fig. 3
-  ent_coef: 0.01           # A-23 (provisional, locked by the A-39 pilot)
+  ent_coef: 0.01           # A-23 (locked)
