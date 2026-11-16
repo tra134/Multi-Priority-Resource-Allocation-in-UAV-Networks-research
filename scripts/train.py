@@ -1,7 +1,8 @@
 """Train MADDPG or MAPPO on LinMECEnv (Lin et al. 2025 reproduction, docs/lin2025_spec.md Section 10).
 
 A-23 hyperparameters must be approved by the HUMAN before a real training run.
-Writes to --out: train_log.csv, eval_log.csv, manifest.json, ckpt.pt, final.pt.
+Writes to --out: train_log.csv, eval_log.csv, manifest.json (current segment), manifest_history.jsonl
+(append-only record of every start/resume, checkpoint and end; P-013), ckpt.pt, final.pt.
 --out is required (no default). Training reset seeds: 10_000 + seed * 1_000_000 + episode.
 Periodic evaluation uses validation seeds 2000.. with explore=False (never test seeds).
 reward_sum = sum over the T slots of the mean-over-sensors reward (comparable to Fig. 4a).
@@ -17,6 +18,7 @@ from __future__ import annotations
 import argparse
 import csv
 import dataclasses
+import hashlib
 import json
 import os
 import subprocess
@@ -39,6 +41,69 @@ def git_info() -> dict:
         return {"git_commit": run("rev-parse", "HEAD"), "git_dirty": bool(run("status", "--porcelain"))}
     except (OSError, subprocess.CalledProcessError):
         return {"git_commit": "unknown", "git_dirty": None}
+
+
+HISTORY = "manifest_history.jsonl"
+
+
+def atomic_write(path: Path, write, binary: bool = False) -> None:
+    """Call write(f) on a temp file in the same folder, fsync, then rename over `path`.
+    A crash or error at any point leaves the old file intact (P-013, P-015)."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    try:
+        with tmp.open("wb" if binary else "w", **({} if binary else {"newline": ""})) as f:
+            write(f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def write_json_atomic(path: Path, obj, default=None) -> None:
+    text = json.dumps(obj, indent=2, default=default)  # fails before any file is touched
+    atomic_write(path, lambda f: f.write(text))
+
+
+def append_history(path: Path, rec: dict) -> None:
+    """Append one JSON line (never rewrite). If a crash left a partial last line, start on a new line."""
+    line = json.dumps(rec, default=str) + "\n"
+    with path.open("ab+") as f:
+        if f.seek(0, os.SEEK_END) > 0:
+            f.seek(-1, os.SEEK_END)
+            if f.read(1) != b"\n":
+                line = "\n" + line
+        f.write(line.encode())
+        f.flush()
+        os.fsync(f.fileno())
+
+
+def read_history(path: Path) -> tuple[list[dict], int]:
+    """Return (records, number of unreadable lines, e.g. a line cut by a crash)."""
+    if not path.exists():
+        return [], 0
+    recs, bad = [], 0
+    for ln in path.read_text().splitlines():
+        if not ln.strip():
+            continue
+        try:
+            recs.append(json.loads(ln))
+        except json.JSONDecodeError:
+            bad += 1
+    return recs, bad
+
+
+def torch_load_episode(path: Path) -> int:
+    import torch
+    return int(torch.load(path, weights_only=False)["episode"])
+
+
+def file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for b in iter(lambda: f.read(1 << 20), b""):
+            h.update(b)
+    return h.hexdigest()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -66,10 +131,11 @@ def read_rows(path: Path, keep_below: int) -> list[dict]:
 
 
 def write_rows(path: Path, cols: list[str], rows: list[dict]) -> None:
-    with path.open("w", newline="") as f:
+    def write(f):
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
         w.writerows(rows)
+    atomic_write(path, write)
 
 
 def evaluate(env, learner, n_eps: int) -> dict:
@@ -121,26 +187,47 @@ def main(argv=None) -> int:
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    ckpt_path, start = out / "ckpt.pt", 0
+    ckpt_path, start, source = out / "ckpt.pt", 0, None
     if args.resume and ckpt_path.exists():
         ck = torch.load(ckpt_path, weights_only=False)
         learner.load_state_dict(ck["learner"])
         start = ck["episode"]
+        source = {"path": str(ckpt_path), "episode": start, "sha256": file_sha256(ckpt_path)}
     train_rows = read_rows(out / "train_log.csv", start) if start else []
     eval_rows = read_rows(out / "eval_log.csv", start + 1) if start else []
+    total = int(tcfg["episodes"])
+    # P-013: manifest.json = the current segment (atomic write); manifest_history.jsonl keeps every
+    # start/resume, checkpoint and end of this folder (append only, never rewritten).
+    hist_path = out / HISTORY
+    old, _ = read_history(hist_path)
+    segment = 1 + max((r.get("segment", -1) for r in old), default=-1)
+    stamp, git = datetime.now(timezone.utc).isoformat(), git_info()
+    configs = {"train_config": tcfg, "env_config": dataclasses.asdict(cfg)}
     manifest = {
-        **git_info(), "timestamp": datetime.now(timezone.utc).isoformat(), "cli_args": vars(args),
-        "train_config": tcfg, "env_config": dataclasses.asdict(cfg), "training_seed_index": args.seed,
+        **git, "timestamp": stamp, "cli_args": vars(args), **configs, "training_seed_index": args.seed,
         "reset_seed_formula": "10000 + seed * 1000000 + episode", "eval_seeds_start": VAL_START,
-        "resumed_from_episode": start, "llm_client": "none",
+        "resumed_from_episode": start, "segment": segment, "history_file": HISTORY, "llm_client": "none",
         "torch": torch.__version__, "numpy": np.__version__,
     }
-    (out / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str))
+    append_history(hist_path, {
+        "event": "resume" if source else "start", "segment": segment, "timestamp": stamp, **git,
+        "start_episode": start, "planned_end_episode": total, "source_checkpoint": source,
+        # hash of all settings except the episode count (that is planned_end_episode), to spot a changed config
+        "config_sha256": hashlib.sha256(json.dumps(
+            {**configs, "train_config": {k: v for k, v in tcfg.items() if k != "episodes"}},
+            sort_keys=True, default=str).encode()).hexdigest(),
+        "cli_args": vars(args), "torch": torch.__version__, "numpy": np.__version__,
+    })
+    write_json_atomic(out / "manifest.json", manifest, default=str)
 
     def save(path: Path, ep: int) -> None:
-        torch.save({"learner": learner.state_dict(), "episode": ep}, path)
+        state = {"learner": learner.state_dict(), "episode": ep}
+        atomic_write(path, lambda f: torch.save(state, f), binary=True)
 
-    total = int(tcfg["episodes"])
+    def log_event(event: str, **kw) -> None:
+        append_history(hist_path, {"event": event, "segment": segment,
+                                   "timestamp": datetime.now(timezone.utc).isoformat(), **kw})
+
     for ep in range(start, total):
         obs, info = env.reset(seed=10_000 + args.seed * 1_000_000 + ep)
         state, slots, reward_sum, losses = info["state"], [], 0.0, {}
@@ -164,12 +251,16 @@ def main(argv=None) -> int:
         if n % int(tcfg["eval_every"]) == 0:
             eval_rows.append({"episode": n, **evaluate(env, learner, int(tcfg["eval_episodes"]))})
         if n % int(tcfg["ckpt_every"]) == 0 or n == total:
-            save(ckpt_path, n)
+            # P-015: logs first, then the checkpoint, so logs are never behind ckpt.pt after a crash
+            # (resume drops rows at or after the checkpoint episode, so logs ahead of it are harmless)
             write_rows(out / "train_log.csv", TRAIN_COLS, train_rows)
             write_rows(out / "eval_log.csv", EVAL_COLS, eval_rows)
+            save(ckpt_path, n)
+            log_event("checkpoint", episode=n)
     write_rows(out / "train_log.csv", TRAIN_COLS, train_rows)
     write_rows(out / "eval_log.csv", EVAL_COLS, eval_rows)
     save(out / "final.pt", total)
+    log_event("end", end_episode=total)
     return 0
 
 
