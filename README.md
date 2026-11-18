@@ -18,7 +18,7 @@ The extension is **not started**. Start here: `docs/lin2025_spec.md` (environmen
   - The trained policies offload everything at near-full power, which is no better than a simple heuristic.
   - The paper does not state the rule for bandwidth sharing on a carrier, and the results are sensitive to that rule.
   - Full write-up: `docs/lin2025_reproduction_report.md`; findings: `docs/findings.md`.
-- **Environment `lin-env-v1.1`** is v1.0 plus assumption A-42: sensors on the same (UAV, subcarrier) share its bandwidth in proportion to their requested fractions. A-42 is our own assumption; the paper does not confirm it. It is selected with `--env-config configs/lin2025_v1_1.yaml`, and v1.0 stays the default everywhere. A pilot training run on v1.1 is in progress (spec Section 12).
+- **Environment `lin-env-v1.1`** is v1.0 plus assumption A-42: sensors on the same (UAV, subcarrier) share its bandwidth in proportion to their requested fractions. A-42 is our own assumption; the paper does not confirm it. It is selected with `--env-config configs/lin2025_v1_1.yaml`, and v1.0 stays the default everywhere. The v1.1 pilot (1 seed, validation seeds) is done: learned methods still reach 98-99.7% success, so v1.1 is still saturated (`docs/findings.md` F-11). Retraining all 75 runs on v1.1 is not approved.
 - The milestones `v1.0`, `gate_fix` and `v1.1` are kept side by side. Old results are never overwritten.
 
 ## Setup

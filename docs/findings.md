@@ -131,3 +131,28 @@ Source: `results/v1_1_heuristics_2026-11-18/` (summary.csv; manifest: commit 7df
 | LocalComputing | identical | identical | identical |
 
 v1.1 equals the S-3 N1-prop variant exactly (independent implementations). Reading: A-42 makes offloading only slightly harder (mostly at N = 12); the full-power heuristic stays at 93-99%, so learned methods on v1.1 are expected to stay near saturation (to be checked by the pilot if approved). Latency of the heuristic rises (N = 12: 1.93 -> 3.90 ms).
+
+## F-11 | 2026-11-19 | v1.1 pilot (spec Section 12 step 3): learned methods still saturated; MAPPO learns to avoid shared carriers
+
+Source: `results/pilot_v1_1_2026-11-18/` (runs trained from a clean worktree of commit 835884b, git_dirty false, `configs/lin2025_v1_1.yaml`, seed 0, 20 000 episodes; MADDPG resumed once from ckpt.pt at about episode 10 000 after P-024). Training check: `pilot_check/pilot_check.json`. Evaluation: `eval_val_v1_1/summary.csv` and `diag_v1_1/summary.csv`. Validation seeds 2000-2099, greedy, N = 8, POS, SIC. Paired difference with NearestUAVFullPower on the same seeds and states, with a 95% bootstrap CI (10 000 resamples, RNG seed 0). The v1.0 seed-0 numbers come from `results/s5_policy_diagnostics_2026-11-18/per_run.csv` (same seeds and method). TE-099.
+
+| Quantity | POS_MADDPG_NOMA v1.0 -> v1.1 | POS_MAPPO_NOMA v1.0 -> v1.1 |
+|---|---|---|
+| Success rate (learned) | 0.9969 -> 0.9798 | 0.9950 -> 0.9969 |
+| NearestUAVFullPower on the same seeds | 0.9886 -> 0.9730 | 0.9886 -> 0.9730 |
+| Learned - heuristic, pp [95% CI] | +0.82 [0.57, 1.09] -> +0.68 [0.18, 1.18] | +0.64 [0.36, 0.94] -> +2.39 [1.86, 2.93] |
+| Offload fraction | 1.0 -> 1.0 | 1.0 -> 1.0 |
+| Agreement with nearest UAV | 0.502 -> 0.508 | 0.506 -> 0.510 |
+| Mean power fraction | 0.950 -> 0.963 | 0.868 -> 0.920 |
+| Mean bandwidth fraction | 1.000 -> 1.000 | 0.975 -> 0.961 |
+| Fraction of sensor-slots on a shared carrier (heuristic: 0.425) | 0.029 -> 0.25 | 0.013 -> 0.0 |
+
+Training checks (A-39): T1 and T2 pass for both runs (MADDPG Delta -0.27 pp, best minus last 0.63 pp; MAPPO Delta +0.13 pp, best minus last 0.0 pp). Local_Computing on the same seeds: 0.6265.
+
+Reading:
+1. v1.1 is still saturated for learning: both methods reach 98-99.7% success against Lin's 85.63% (MADDPG) and 71.4% (MAPPO, A-35).
+2. The ranking is opposite to the paper's: on v1.1 POS_MAPPO is above POS_MADDPG by about 1.7 pp (one training seed, so not a tested comparison).
+3. The learned policies still offload everything, and their UAV choice is still at chance level relative to distance.
+4. Under v1.1 MAPPO never shares a carrier, and its margin over the heuristic grows from +0.64 to +2.39 pp. This is the only new behaviour A-42 induces. The shared-carrier fraction was already low on v1.0 (0.013-0.029), probably because co-channel NOMA interference already penalises sharing.
+
+Implication for step 4 (75 runs on v1.1): the pilot gives no sign that v1.1 would separate the methods as the paper does, or move them toward the paper's levels. This is a pilot with one seed; it is input for the HUMAN's step 4 decision, not a result.
