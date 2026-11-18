@@ -1,228 +1,86 @@
 # Multi-Priority-Resource-Allocation-in-UAV-Networks-research
 
-UAV Multi-Priority Resource Allocation with **SAC + Ensemble Critic + Async LLM Arbiter**.
+Reproduction of the system model of **Lin et al. 2025**, "Deep Reinforcement Learning-Based Intelligent Resource Management in Multi-UAVs-Assisted MEC Emergency Communication System", *IET Communications* 19:e70063 ([DOI 10.1049/cmu2.70063](https://doi.org/10.1049/cmu2.70063)). The paper has no public code, so the environment is rebuilt from its text.
 
-Reproducible simulation study testing the claims in the PBL3 mid-term report.
-See `plan.md` for the full implementation plan (Phases 0-10).
+The plan has two parts:
+1. Reproduce Lin's environment and baselines, and check them against the paper's numbers (stages R0-R3).
+2. Extend that environment with multi-priority tasks, an ensemble critic and an LLM arbiter (stages R4-R8).
 
-**Status:** Phases 0-8 implemented and tested. The live Groq smoke test passed
-on 2026-11-01: **100% schema-valid**, 92% strict diagnosis accuracy, 50 calls,
-median latency 1159 ms. Prompt `v2-final` is frozen. Next: train checkpoints
-(Phase 3/4), calibrate `tau_unc`, then run the Phase 9 grid.
+The extension is **not started**. Start here: `CLAUDE.md` (rules), `plan.md` (stages), `docs/lin2025_spec.md` (environment contract).
 
-## Quick start (copy-paste)
+## Status (2026-11-18)
+
+- **Environment `lin-env-v1` (v1.0)** was frozen on 2026-11-13. It has K = 2 UAVs and M = 4 subcarriers, and uses NOMA uplink with SIC. Every value the paper does not state is recorded as an assumption with an ID (A-n) in spec Section 6. The unstated values were calibrated only against Local_Computing.
+- **Learning baselines**: MADDPG (Gumbel-Softmax) and MAPPO, each in POS and FOS mode, with and without SIC. In total 75 runs of 20 000 episodes each: Table 2 at N = 8, and the Fig. 5 sweep over N.
+- **Reproduction not achieved.** All four pre-registered gate items fail.
+  - Local_Computing matches the paper: 62.7% success here vs 61.25% in the paper.
+  - Every learned method saturates at about 99% success; the paper reports 34.6-85.6%.
+  - The trained policies offload everything at near-full power, which is no better than a simple heuristic.
+  - The paper does not state the rule for bandwidth sharing on a carrier, and the results are sensitive to that rule.
+  - Full write-up: `docs/lin2025_reproduction_report.md`; findings: `docs/findings.md`.
+- **Environment `lin-env-v1.1`** is v1.0 plus assumption A-42: sensors on the same (UAV, subcarrier) share its bandwidth in proportion to their requested fractions. A-42 is our own assumption; the paper does not confirm it. It is selected with `--env-config configs/lin2025_v1_1.yaml`, and v1.0 stays the default everywhere. A pilot training run on v1.1 is in progress (spec Section 12).
+- The milestones `v1.0`, `gate_fix` and `v1.1` are kept side by side. Old results are never overwritten.
+
+## Setup
 
 ```bash
-# 0. Create and activate the virtual environment
 python3 -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-
-# 1. Install the package (dev extras include pytest + ruff)
-pip install -U pip
-pip install -e ".[dev]"
-
-# 2. Run the test suite (70 tests)
-pytest -q
-
-# 3. Phase 1: channel & traffic plots
-python scripts/plot_channel.py
-
-# 4. Phase 2: baseline comparison
-python scripts/run_baselines.py
-
-# 5. Phase 3: train Pure SAC (N_critics=2)
-python scripts/train.py --config configs/default.yaml --agent sac --n-critics 2 \
-    --seed 0 --steps 300000
-
-# Phase 4: REDQ-SAC (N_critics=10)
-python scripts/train.py --config configs/default.yaml --agent sac --n-critics 10 \
-    --seed 0 --steps 300000
-
-# Resume after the latest checkpoint (model, optimizers and step are restored;
-# the replay buffer is rebuilt)
-python scripts/train.py --agent sac --n-critics 10 --steps 300000 --resume
-
-# 6. Phase 8: real-LLM smoke test (Groq) + Claim E inference benchmark
-python scripts/llm_smoke_test.py --n 20
-python scripts/benchmark_inference.py
-
-# 7. Phase 9: train the 15 checkpoints (5 seeds x N=2, N=10, DR-wide)
-for seed in 0 1 2 3 4; do
-    python scripts/train.py --agent sac --n-critics 2  --seed $seed --steps 300000 --ckpt-dir results/ckpt --resume
-    python scripts/train.py --agent sac --n-critics 10 --seed $seed --steps 300000 --ckpt-dir results/ckpt --resume
-    python scripts/train.py --agent sac --n-critics 2  --seed $seed --steps 300000 --ckpt-dir results/ckpt --dr-wide --resume
-done
-
-# 8. Phase 9: tune the queue trigger on validation seeds, then run the grid
-python scripts/calibrate_theta.py --ckpt results/ckpt/sac_seed0_N10_latest.pt \
-    --scenarios S1,S2,S4 --episodes 3 --out results/phase9/theta_sweep.csv
-python scripts/run_grid.py --seeds 0 --scenarios S0,S1 --episodes 1 --slots 300  # smoke
-python scripts/run_grid.py --seeds 0                 # one seed
-python scripts/run_grid.py --seeds 0,1,2,3,4         # full grid -> results/final/metrics.csv
-
-# Optional: real Groq arbiter (costs tokens; --no-cache keeps latency honest)
-python scripts/run_grid.py --seeds 0 --llm real --no-cache
+venv/bin/pip install -U pip
+venv/bin/pip install -e ".[dev]"
 ```
 
-`run_grid.py` finds checkpoints either flat
-(`results/ckpt/sac_seed0_N10_latest.pt`) or in per-run folders
-(`results/ckpt/sac_seed0_N10/sac_seed0_N10_latest.pt`), so the Colab notebook
-layout works unchanged.
+The shell may deactivate the venv when you change directory, so call `venv/bin/...` directly.
 
-## Colab training
-
-`notebooks/colab_train.ipynb` trains either agent on a Colab GPU and keeps
-checkpoints on Google Drive:
-
-1. Open the notebook in Colab and choose `Runtime -> Change runtime type -> T4 GPU`.
-2. For a private clone, add a Colab secret named `GITHUB_TOKEN`.
-3. In the configuration cell set `N_CRITICS` (`2` = Pure SAC, `10` = REDQ-SAC),
-   `SEED` and `STEPS`; then run all cells.
-
-The notebook clones over HTTPS (the token is removed from `.git/config`
-afterwards), installs the package, trains with `--resume`, verifies the
-checkpoint format, and copies TensorBoard logs/results to Drive. Model,
-optimizer, entropy and step state survive a disconnect; the replay buffer does
-not and is rebuilt on resume.
-
-Key training flags:
-
-| Flag | Meaning |
-|------|---------|
-| `--n-critics N` | `2` = twin-critic SAC, `10` = REDQ-SAC (overrides `sac.N_critics`) |
-| `--ckpt-every K` | checkpoint interval; use `5000` on flaky Colab sessions |
-| `--resume` | continue from `<ckpt-dir>/<run>_latest.pt` |
-| `--eval-every K` | evaluation interval in environment steps |
-
-Run names are `sac_seed<SEED>_N<N_CRITICS>`, so Pure SAC and REDQ-SAC never
-overwrite each other.
-
-### CPU-only fallback (no Colab GPU)
-
-`scripts/train_phase9.sh` trains the 15 Phase 9 checkpoints sequentially and
-resumes automatically:
+## Tests and lint
 
 ```bash
-# first chunk: seed 0, all three learning setups
-SEEDS="0" ./scripts/train_phase9.sh
-
-# full sweep (5 seeds x N=2, N=10, N=2_drwide)
-SEEDS="0 1 2 3 4" ./scripts/train_phase9.sh
+# the machine lags at 100% CPU: run niced, 2 threads, one pytest at a time
+nice -n 10 env OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 venv/bin/python -m pytest -q
+venv/bin/python -m ruff check src scripts tests
 ```
 
-It logs to `results/logs/`, checkpoints to `results/ckpt/`, and uses a light
-evaluation schedule (`100k` steps, 3 episodes) because the Phase 9 grid does
-the full 20-episode evaluation later.
+## Main scripts
 
-On an i9-13900H CPU the measured throughput is about **138 steps/s for N=2**
-(~36 min per 300k run) and **42 steps/s for N=10** (~2 h). A full 15-run sweep
-is therefore roughly 16-18 hours; run it in chunks (`SEEDS="0"`, then
-`SEEDS="1"`, ...) and keep the laptop plugged in.
+Every script has `--help`. All output folders must be given explicitly, and most scripts refuse an existing folder. Test seeds (5000-5999) are used only for final evaluation; analyses use validation seeds (2000-2999).
 
-**Training troubleshooting**
+| Script | Purpose |
+|---|---|
+| `scripts/calibrate_local.py` | Calibrate c_cyc and kappa on Local_Computing (spec Section 5) |
+| `scripts/evaluate_baselines.py` | Non-learning baselines (Local, Random, heuristics) on validation seeds |
+| `scripts/train.py` | Train MADDPG or MAPPO (`--algo`, `--mode POS/FOS`, `--sic/--no-sic`, `--n-sensors`, `--seed`, `--env-config`, `--resume`) |
+| `scripts/check_pilot.py` | Apply the A-39 pilot rule (T1/T2 training checks) |
+| `scripts/evaluate_learned.py` | Greedy evaluation of trained runs, plus the reproduction gate (spec Section 7) |
+| `scripts/recompute_gate.py` | Recompute `gate.json` from a stored `per_run.csv` |
+| `scripts/run_s3.py` | S-3 sensitivity analysis of unstated assumptions (`configs/s3_variants.yaml`) |
+| `scripts/s4_equivalence.py` | S-4 equivalence test (TOST) between learned methods |
+| `scripts/diagnose_policies.py` | S-5 diagnostics of what the learned policies do |
+| `scripts/run_heuristics.py` | Non-learning policies on v1.0 vs v1.1 |
 
-- `ModuleNotFoundError: No module named 'uavrl'` — the notebook puts
-  `<repo>/src` on `PYTHONPATH` and launches training with `sys.executable`.
-  Rerun the clone/install cell after a runtime restart. `scripts/train.py`
-  also adds `src` to `sys.path`, so it works even without `pip install -e .`.
-- `CalledProcessError ... returned non-zero exit status 1` — that is only the
-  wrapper; the actual Python traceback is printed immediately above it.
-
-
-
-Secrets live in `.env` (gitignored). Copy the template and fill in the key:
+Example (smoke run into a scratch folder):
 
 ```bash
-cp .env.example .env
-# edit .env
+venv/bin/python scripts/train.py --algo maddpg --n-sensors 2 --episodes 3 --set eval_episodes=1 --out /tmp/smoke
 ```
 
-```dotenv
-LLM_BASE_URL=https://api.groq.com/openai/v1
-LLM_API_KEY=gsk_...
-LLM_MODEL=qwen/qwen3.8-27b
-```
-
-`configs/llm.yaml` contains the non-secret defaults (provider, model,
-temperature, retry count, cache). Environment variables override the YAML, so
-the same code works locally, on Colab, and in tests.
-
-On Colab, add a secret named `GROQ_API_KEY` (key icon in the left sidebar), then
-write it to the gitignored `.env` before running any LLM script:
-
-```python
-import os
-from google.colab import userdata
-
-key = userdata.get("GROQ_API_KEY")
-with open("/content/uav-drl-llm/.env", "w") as f:
-    f.write("LLM_BASE_URL=https://api.groq.com/openai/v1\n")
-    f.write(f"LLM_API_KEY={key}\n")
-    f.write("LLM_MODEL=qwen/qwen3.8-27b\n")
-os.chmod("/content/uav-drl-llm/.env", 0o600)
-```
-
-Use `--mock` to test the controller without a key.
-
-The default is `qwen/qwen3.8-27b`: it is non-reasoning, uses fewer output
-tokens, and scored best on the smoke test. `openai/gpt-oss-120b` is also
-tested and still works (`--model openai/gpt-oss-120b`, with
-`reasoning_effort: low`). Groq retired the old Llama 3.x models on
-2026-08-16.
-
-### Smoke test
-
-```bash
-# real Groq endpoint: JSON validity, diagnosis accuracy, latency, tokens
-python scripts/llm_smoke_test.py --n 20
-
-# no network / CI: exercises the same pipeline with MockLLM
-python scripts/llm_smoke_test.py --n 20 --mock
-
-# also fit a lognormal latency model for the simulator
-python scripts/llm_smoke_test.py --n 50 --write-latency-config
-
-# full controller + safety-mask path with the real model (short episode)
-python scripts/llm_controller_smoke.py
-
-# trained checkpoint + calibrated tau_unc, hybrid (uncertainty OR queue) trigger
-python scripts/llm_controller_smoke.py \
-    --ckpt results/ckpt/sac_seed0_N10/sac_seed0_N10_latest.pt \
-    --trigger-mode hybrid --scenario surge --slots 2000
-```
-
-Results are written to `results/phase8/smoke_test.{json,csv}` and the fitted
-latency model to `configs/llm_latency.yaml`. The script exits non-zero if fewer
-than 95% of responses are schema-valid (plan.md Phase 8 acceptance criterion).
-
-The Groq free tier allows 8000 tokens/minute. The script paces calls with
-`--tpm-limit 7000` and the client retries HTTP 429 using `Retry-After`;
-`--no-throttle` is available for paid tiers. Numeric prompt features are
-rounded to 2 significant figures so repeated situations hit the disk cache.
-
-### Troubleshooting
-
-- **403 `Access denied. Please check your network settings.`** — Groq blocks
-  API access from some regions. Change network/VPN or switch provider.
-- **429 rate limit** — the free tier is 8000 tokens/minute. Keep the default
-  pacing, use the cache, or upgrade to a paid tier.
-- **Use Ollama instead (offline):** `ollama pull qwen2.5:3b`, then set
-  `LLM_BASE_URL=http://localhost:11434/v1`, `LLM_API_KEY=ollama`,
-  `LLM_MODEL=qwen2.5:3b`.
-- **Never commit `.env`.** It is already in `.gitignore`.
+Long training runs on Colab (`notebooks/colab_train.ipynb`) or on the laptop inside a resource-limited systemd unit. See `trialAndError.md` and `problemsAndFixes.md` (P-016) for the exact commands.
 
 ## Repository layout
 
-See `plan.md` Section 3. Source lives in `src/uavrl/`, configs in `configs/`,
-scripts in `scripts/`, tests in `tests/`, notebooks in `notebooks/`, and
-results in `results/` (gitignored).
+```
+configs/      lin2025.yaml (v1.0), lin2025_v1_1.yaml (v1.1), train_lin2025.yaml, s3_variants.yaml
+src/uavmec/   env/ (environment: channel, NOMA, tasks, energy), agents/ (MADDPG, MAPPO),
+              baselines/ (non-learning policies), eval/ (metrics, runner), config.py
+scripts/      entry points (table above)
+tests/        pytest suite
+docs/         spec, audit, targets, findings, reproduction report
+notebooks/    Colab training notebook
+results/      outputs (gitignored, never committed)
+```
 
-## Claims tested (plan.md Section 1)
+## Project records
 
-| ID | Claim |
-|----|-------|
-| A | Ensemble uncertainty gives early OOD warning |
-| B | LLM arbiter adds value beyond a rule-based shield |
-| C | Hybrid trigger beats periodic / reactive / always-on at lower cost |
-| D | Safety layer keeps the system safe when the LLM fails |
-| E | Real-time feasibility (actor + ensemble inference < 5 ms/slot) |
+- `docs/lin2025_spec.md`: environment contract, assumptions (A-n), gate, and the registrations of every secondary analysis.
+- `docs/findings.md`: scientific results (F-n). Every number in it comes from a script and a stored artifact.
+- `trialAndError.md`: append-only work log (TE-n).
+- `problemsAndFixes.md`: problems and their fixes (P-n).
+- `reference.md`: references (R-n).
