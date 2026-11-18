@@ -1,0 +1,36 @@
+# S-3 sensitivity variants (docs/lin2025_spec.md Section 11, "S-3 detailed registration").
+# One named block per variant; each changes ONE reading relative to V0 (= lin-env-v1, v1.0).
+# Passed explicitly to LinMECEnv(..., s3_variant=...) / scripts/run_s3.py; configs/lin2025.yaml is not touched.
+# These are measurement points for a sensitivity analysis, never chosen by closeness to the paper's numbers.
+# Keys (all optional; defaults reproduce v1.0): bw_rule v0|seq|prop|eq, gain_const, a8_literal,
+# bw_split table|total_split, noise_w, uav_compute_bound, description.
+variants:
+  V0:
+    description: "reference, v1.0 exactly: B_n = f_n B, A-8 interference/SIC, noise 1e-10 W, distance-law gain, zero UAV compute time"
+  N1-seq:
+    bw_rule: seq
+    description: "sequential depletion within each (UAV, subcarrier) group in increasing sensor index: B_n = f_n R, R <- R - B_n, R starts at B"
+  N1-prop:
+    bw_rule: prop
+    description: "proportional rescaling: B_n = f_n B / max(1, sum of f in the group)"
+  N1-eq:
+    bw_rule: eq
+    description: "equal split bound: B_n = B / |group| (ignores f_n)"
+  A1-const:
+    gain_const: 1.0e-5
+    description: "Table 1 channel gain -50 dB read as a bare constant |h|^2 = 1e-5 on every link"
+  A8-lit:
+    a8_literal: true
+    description: "literal Eq. 5: interference of j on n = h_n p_j, order and cancellation by transmit power (chi_jn = 1 iff p_j > p_n), d_j = 1 iff R_j >= R_0"
+  A3-total:
+    bw_split: total_split
+    description: "B = 250 MHz / M = 62.5 MHz per subcarrier (Section 3 'B/M')"
+  A2-dBm:
+    noise_w: 1.0e-13
+    description: "noise -100 dBm = 1e-13 W (unit convention only)"
+  A2-psd:
+    noise_w: 1.0e-12
+    description: "noise -174 dBm/Hz x 250 MHz = 1e-12 W (convention only)"
+  UAV-cb:
+    uav_compute_bound: true
+    description: "bound only, not a literal reading: offloaded latency += C_n c_cyc / (f_uav / n_k), f_uav = 1.4 GHz, c_cyc = 24.5 (calibrated local value, A-33), n_k = sensors offloading to UAV k in the slot; energy unchanged"

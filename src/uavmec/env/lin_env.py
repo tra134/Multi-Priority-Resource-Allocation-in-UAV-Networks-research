@@ -9,6 +9,7 @@ from uavmec.env import energy
 from uavmec.env.channel import channel_gain
 from uavmec.env.local import local_latency
 from uavmec.env.noma import noma_links
+from uavmec.env.s3_variants import S3Variant, as_variant, s3_offload_links
 from uavmec.env.tasks import sample_tasks
 from uavmec.env.types import SensorAction, TaskOutcome
 
@@ -29,12 +30,19 @@ class LinMECEnv:
     battery (N,) J, uav_battery (K,) J, channel_gain (N,K).
     """
 
-    def __init__(self, cfg: LinConfig, sic: bool = True, mode: str = "POS"):
+    def __init__(
+        self,
+        cfg: LinConfig,
+        sic: bool = True,
+        mode: str = "POS",
+        s3_variant: S3Variant | dict | None = None,
+    ):
         if mode not in ("POS", "FOS"):
             raise ValueError(f"mode must be POS or FOS, got {mode!r}")
         self.cfg = cfg
         self.sic = sic
         self.mode = mode
+        self.s3 = as_variant(s3_variant)  # S-3 sensitivity variant; None = v1.0 (default)
         self.n_agents = cfg.n_sensors
         # own S_n = (x, y, E, C, D) plus S_k = (x, y, H, B_k, E_k) of every UAV
         self.obs_dim = 5 + 5 * cfg.n_uavs
@@ -67,6 +75,8 @@ class LinMECEnv:
         self.channel_gain = channel_gain(
             self.sensor_pos, self.uav_pos, self.cfg.uav_height_m, self.cfg.beta0
         )
+        if self.s3 is not None:  # S-3 A1-const (other variants: unchanged)
+            self.channel_gain = self.s3.channel_gain(self.channel_gain)
 
     def _state_vector(self) -> np.ndarray:
         cfg = self.cfg
@@ -143,15 +153,23 @@ class LinMECEnv:
 
         # --- offloading users: NOMA rates (Eq. 5-7) ---
         off = [n for n in range(n_s) if actions[n].target > 0]
+        extra_s = None  # S-3 UAV-cb compute latency of each offloader (None = v1.0)
         if off:
             uav_idx = np.array([actions[n].target - 1 for n in off])
             sub_idx = np.array([actions[n].subcarrier for n in off])
             power = np.array([actions[n].power_frac * cfg.p_max_w for n in off])
-            bw = np.array([actions[n].bw_frac * cfg.subcarrier_bw_hz for n in off])
-            rx = self.channel_gain[off, uav_idx] * power
-            sinr, rate, decoded = noma_links(
-                uav_idx, sub_idx, rx, bw, cfg.noise_w, cfg.rate_req_bps, self.sic
-            )
+            if self.s3 is None:
+                bw = np.array([actions[n].bw_frac * cfg.subcarrier_bw_hz for n in off])
+                rx = self.channel_gain[off, uav_idx] * power
+                sinr, rate, decoded = noma_links(
+                    uav_idx, sub_idx, rx, bw, cfg.noise_w, cfg.rate_req_bps, self.sic
+                )
+            else:  # S-3 variant path (V0 reproduces the branch above exactly)
+                sinr, rate, decoded, extra_s = s3_offload_links(
+                    self.s3, cfg, self.sic, np.array(off), uav_idx, sub_idx,
+                    self.channel_gain[off, uav_idx], power,
+                    np.array([actions[n].bw_frac for n in off]), self.task_sizes[off],
+                )
 
         spent = np.zeros(n_s)
         for n in range(n_s):
@@ -170,6 +188,8 @@ class LinMECEnv:
                 r = float(rate[i])
                 lat = bits / r if r > 0 else float("inf")
                 req = float(energy.offload_energy_required(power[i], lat, cfg.slot_s))
+                if extra_s is not None:  # S-3 UAV-cb: compute time counts for the deadline, not energy
+                    lat = lat + float(extra_s[i])
                 # A-20: spent energy = min(required, battery); a task failing for energy drains the battery.
                 spent[n] = min(req, batt)
                 if not decoded[i]:
