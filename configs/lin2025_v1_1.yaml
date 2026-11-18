@@ -1,0 +1,47 @@
+# lin-env-v1.1 = configs/lin2025.yaml (v1.0) + bandwidth_sharing: proportional (A-42). Do not edit values here
+# without editing configs/lin2025.yaml in the same way.
+# Lin et al. 2025 reproduction config. Source tags: P = paper, A-n = assumption, C-n = calibrated.
+# See docs/lin2025_spec.md Sections 1, 5, 6.
+
+# --- Scenario (spec Section 1) ---
+n_uavs: 2                    # P: Table 1 (K)
+n_sensors: 8                 # P: Table 1 (N; sweep 2..12)
+n_subcarriers: 4             # P: Table 1 (M)
+bandwidth_hz: 250.0e+6        # P: Table 1 "Carrier bandwidth 250 MHz", Section 6.1; A-3: per subcarrier
+area_m: 100.0                # P: Table 1 (L = W)
+uav_height_m: 100.0          # P: Table 1 (H, fixed)
+uav_hover_power_w: 168.4842  # A-37: Diao et al. 2021 Eq. 17 (Lin ref [31]), P_H
+uav_v_max: 50.0              # P: Table 1 (m/s)
+slot_s: 1.0                  # P: Table 1 (xi)
+n_slots: 10                  # P: Table 1; A-9 (T, slots per episode)
+p_max_w: 1.0                 # P: Table 1
+f_sensor_hz: 1.0e+9           # P: Table 1 (F_n)
+f_uav_hz: 1.4e+9              # P: Table 1 (unused, UAV compute time negligible)
+sensor_battery_j: [100.0e+3, 400.0e+3]  # P: Table 1; A-10 (U(low, high) per episode)
+uav_battery_j: [100.0e+3, 500.0e+3]     # P: Table 1; A-10
+rate_req_bps: 10.0e+6         # P: Table 1 (R_0)
+noise_w: 1.0e-10             # P: Table 1 (-100 dB); A-2
+beta0: 1.0e-5                # P: Table 1 (-50 dB); A-1, gain at 1 m
+
+# --- Tasks (A-5, A-33) ---
+task_unit_bits: 50.0e+3       # A-5: C = 0.05 Mbit
+task_poisson_lambda: 16.0    # A-5
+task_min_bits: 100.0e+3       # P: Table 1 (0.1 Mbit); A-5 clip
+task_max_bits: 1.5e+6         # P: Table 1 (1.5 Mbit); A-5 clip
+deadline_min_s: 0.001        # P: Table 1 (1 ms); A-33: D_n ~ U(min, max), independent of C_n
+deadline_max_s: 0.050        # P: Table 1 (50 ms); A-33
+
+# --- Local computing and energy ---
+c_cyc: 24.5                  # C-1: calibrated in test T-1 (LocalComputing latency 18.74 ms vs 18.76; results/T1_deadline_model_2026-11-13)
+kappa: 1.0009e-27            # C-2: calibrated in test T-3 with energy averaged over successful tasks (A-34); F^3 check 1e-27
+
+# --- UAV ---
+d_safe_m: 10.0               # A-16 (UAV minimum separation d_s)
+
+# --- Reward (P: Eq. 15) ---
+reward_success: 3.0          # P: Eq. 15
+reward_fail: -1.0            # P: Eq. 15
+
+# --- Bandwidth sharing (lin-env-v1.1 only; docs/lin2025_spec.md Section 12) ---
+bandwidth_sharing: proportional  # A-42: on each (UAV, subcarrier) B_n = f_n B / max(1, sum of f in the group);
+                                 # our assumption, NOT a rule confirmed by Lin. lin2025.yaml (v1.0) = independent (default)

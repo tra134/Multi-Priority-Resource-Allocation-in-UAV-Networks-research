@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+BANDWIDTH_SHARING = ("independent", "proportional")  # "proportional" = A-42 (lin-env-v1.1)
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,8 @@ class LinConfig:
     d_safe_m: float = 10.0
     reward_success: float = 3.0
     reward_fail: float = -1.0
+    # "independent": B_n = f_n B (lin-env-v1.0). "proportional": A-42 (lin-env-v1.1), see lin_env.py.
+    bandwidth_sharing: str = "independent"
 
     def __post_init__(self) -> None:
         _validate(self)
@@ -80,6 +83,8 @@ def _validate(c: LinConfig) -> None:
         raise ValueError("deadline_min_s must be <= deadline_max_s")
     if c.reward_success <= c.reward_fail:
         raise ValueError("reward_success must be larger than reward_fail")
+    if c.bandwidth_sharing not in BANDWIDTH_SHARING:
+        raise ValueError(f"bandwidth_sharing must be one of {BANDWIDTH_SHARING}, got {c.bandwidth_sharing!r}")
 
 
 def load_config(path: str | Path = "configs/lin2025.yaml", **overrides) -> LinConfig:

@@ -20,6 +20,23 @@ _SENSOR_BATT_NORM_J = 400.0e3  # largest sensor battery (P: Table 1)
 _UAV_BATT_NORM_J = 500.0e3  # largest UAV battery (P: Table 1)
 
 
+def proportional_bandwidth(
+    uav_idx: np.ndarray, sub_idx: np.ndarray, bw_frac: np.ndarray, bandwidth_hz: float
+) -> np.ndarray:
+    """A-42: bandwidth B_n (Hz) of every offloader when sensors on one carrier share it.
+
+    For each group (UAV k, subcarrier m): B_n = f_n B / max(1, sum of f_j over the group), so the
+    sum of B_n on a carrier never exceeds B. Groups with sum f <= 1 are unchanged (B_n = f_n B).
+    Order independent: a group is defined by (k, m) only, never by the sensor order.
+    """
+    f = np.asarray(bw_frac, dtype=float)
+    out = f * bandwidth_hz  # A-42: requested bandwidth f_n B
+    for key in sorted(set(zip(np.asarray(uav_idx).tolist(), np.asarray(sub_idx).tolist(), strict=True))):
+        members = (np.asarray(uav_idx) == key[0]) & (np.asarray(sub_idx) == key[1])
+        out[members] = out[members] / max(1.0, float(f[members].sum()))  # A-42: rescale if sum f > 1
+    return out
+
+
 class LinMECEnv:
     """Sensors (agents) choose local computing or offloading to a UAV over NOMA.
 
@@ -39,6 +56,9 @@ class LinMECEnv:
     ):
         if mode not in ("POS", "FOS"):
             raise ValueError(f"mode must be POS or FOS, got {mode!r}")
+        if s3_variant is not None and cfg.bandwidth_sharing != "independent":
+            # A-42 and the S-3 N1 rules are two ways to set B_n; the S-3 path would ignore A-42 silently
+            raise ValueError("s3_variant cannot be combined with bandwidth_sharing != 'independent'")
         self.cfg = cfg
         self.sic = sic
         self.mode = mode
@@ -159,7 +179,13 @@ class LinMECEnv:
             sub_idx = np.array([actions[n].subcarrier for n in off])
             power = np.array([actions[n].power_frac * cfg.p_max_w for n in off])
             if self.s3 is None:
-                bw = np.array([actions[n].bw_frac * cfg.subcarrier_bw_hz for n in off])
+                if cfg.bandwidth_sharing == "proportional":  # A-42 (lin-env-v1.1)
+                    bw = proportional_bandwidth(
+                        uav_idx, sub_idx, np.array([actions[n].bw_frac for n in off]),
+                        cfg.subcarrier_bw_hz,
+                    )
+                else:  # v1.0: independent fractions, B_n = f_n B (unchanged)
+                    bw = np.array([actions[n].bw_frac * cfg.subcarrier_bw_hz for n in off])
                 rx = self.channel_gain[off, uav_idx] * power
                 sinr, rate, decoded = noma_links(
                     uav_idx, sub_idx, rx, bw, cfg.noise_w, cfg.rate_req_bps, self.sic
