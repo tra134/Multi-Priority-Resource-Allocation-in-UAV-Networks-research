@@ -121,8 +121,13 @@ def gate_item3(summ: dict, per_seed: dict | None) -> dict:
     missing = [f"{m} N={n}" for m in A38_METHODS for n in A38_NS if (m, n) not in per_seed]
     if missing:
         return ne("missing method/N combinations: " + ", ".join(missing), seed_sets=seed_sets)
+    per_seed = dict(per_seed)  # do not mutate the caller's dict
     for m in A38_METHODS:
-        if len({tuple(seed_sets[f"{m}|N={n}"]) for n in A38_NS}) != 1:
+        # A-41: at N = 8 the Table 2 runs (seeds 0-4) are reused; only the seeds the sweep has at the other N count.
+        sweep = set.intersection(*(set(seed_sets[f"{m}|N={n}"]) for n in A38_NS if n != N_TARGET))
+        per_seed[(m, N_TARGET)] = {s: v for s, v in per_seed[(m, N_TARGET)].items() if s in sweep}
+        seed_sets[f"{m}|N={N_TARGET}"] = sorted(per_seed[(m, N_TARGET)])
+        if len({tuple(seed_sets[f"{m}|N={n}"]) for n in A38_NS}) != 1:  # A-38
             return ne(f"{m}: training-seed set differs across N", seed_sets=seed_sets)
     slopes, checks = {}, []
     for m in A38_METHODS:

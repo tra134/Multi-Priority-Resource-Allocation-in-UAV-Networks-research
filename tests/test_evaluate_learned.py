@@ -181,3 +181,39 @@ def test_a38_latency_threshold():
 
 def test_a38_fos_best_fail():
     assert _item3(fos_bonus=-0.02)["status"] == "fail"
+
+
+def test_a41_n8_extra_seeds_use_sweep_seeds_only():
+    """A-41: at N=8 the Table 2 runs have seeds 0-4, the sweep has seeds 0-2; item 3 uses seeds 0-2 at N=8."""
+    ss = {(m, 8): (0, 1, 2, 3, 4) for m in M3}
+    it = _item3(seed_sets=ss)
+    assert it["status"] == "pass", it
+    for m in M3:
+        assert sorted(it["slopes"][m]["success_pp"]["seeds"]) == [0, 1, 2]
+
+
+def test_a38_n8_missing_sweep_seed_not_evaluable():
+    """A-38: a sweep seed (0-2) missing at N=8 still gives not_evaluable."""
+    assert _item3(seed_sets={("POS_MAPPO_NOMA", 8): (0, 1, 3, 4)})["status"] == "not_evaluable"
+    assert _item3(seed_sets={("POS_MAPPO_NOMA", 6): (0, 1)})["status"] == "not_evaluable"
+
+
+def test_recompute_gate_from_per_run(tmp_path):
+    """scripts/recompute_gate.py rebuilds the gate from a per_run.csv without any evaluation."""
+    cols = ["method", "n_sensors", "seed", "run_dir", "success_rate", "mean_latency_ms", "mean_energy_mw",
+            "n_episodes", "git_commit"]
+    rows = []
+    for m in M3:
+        for n in NS:
+            for s in ((0, 1, 2, 3, 4) if n == 8 else (0, 1, 2)):
+                rows.append([m, n, s, "x", 0.95 - 0.03 * (n - 2), 5.0 + 0.9 * (n - 2), 1.0, 100, "abc"])
+    csv_in = tmp_path / "per_run.csv"
+    csv_in.write_text(",".join(cols) + "\n" + "\n".join(",".join(map(str, r)) for r in rows) + "\n")
+    out = tmp_path / "out"
+    r = sh(str(ROOT / "scripts" / "recompute_gate.py"), "--per-run", str(csv_in), "--out", str(out))
+    assert r.returncode == 0, r.stderr
+    g = json.loads((out / "gate.json").read_text())
+    assert g["items"]["3"]["status"] == "pass"
+    man = json.loads((out / "manifest.json").read_text())
+    assert man["llm_client"] == "none" and len(man["input_sha256"]) == 64
+    assert sh(str(ROOT / "scripts" / "recompute_gate.py"), "--per-run", str(csv_in), "--out", str(out)).returncode != 0  # no overwrite
