@@ -6,7 +6,7 @@ The plan has two parts:
 1. Reproduce Lin's environment and baselines, and check them against the paper's numbers (stages R0-R3).
 2. Extend that environment with multi-priority tasks, an ensemble critic and an LLM arbiter (stages R4-R8).
 
-The extension is **not started**. Start here: `CLAUDE.md` (rules), `plan.md` (stages), `docs/lin2025_spec.md` (environment contract).
+The extension is **not started**. Start here: `docs/lin2025_spec.md` (environment contract), then `docs/lin2025_reproduction_report.md`.
 
 ## Status (2026-11-18)
 
@@ -62,7 +62,7 @@ Example (smoke run into a scratch folder):
 venv/bin/python scripts/train.py --algo maddpg --n-sensors 2 --episodes 3 --set eval_episodes=1 --out /tmp/smoke
 ```
 
-Long training runs on Colab (`notebooks/colab_train.ipynb`) or on the laptop inside a resource-limited systemd unit. See `trialAndError.md` and `problemsAndFixes.md` (P-016) for the exact commands.
+Long training runs on Colab (`notebooks/colab_train.ipynb`) or on the laptop inside a resource-limited systemd unit. The laptop unit caps memory (MemoryMax), disables swap, limits CPU (CPUQuota) and lowers priority (Nice), so the machine stays usable.
 
 ## Repository layout
 
@@ -81,6 +81,8 @@ results/      outputs (gitignored, never committed)
 
 - `docs/lin2025_spec.md`: environment contract, assumptions (A-n), gate, and the registrations of every secondary analysis.
 - `docs/findings.md`: scientific results (F-n). Every number in it comes from a script and a stored artifact.
-- `trialAndError.md`: append-only work log (TE-n).
-- `problemsAndFixes.md`: problems and their fixes (P-n).
-- `reference.md`: references (R-n).
+- `docs/lin2025_audit.md`: audit of each assumption against the paper text and its cited sources.
+- `docs/lin2025_targets.md`: the paper's numbers used as targets, and how they were read.
+- `docs/lin2025_reproduction_report.md`: summary of the reproduction and its negative result.
+
+The docs also mention IDs from the working records: TE-n (work log), P-n (problems and fixes) and R-n (references). These records, the agent rules and the stage plan are kept in the author's local copy and are not in this repository.

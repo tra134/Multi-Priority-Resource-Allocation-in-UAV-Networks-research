@@ -46,9 +46,14 @@ checkpoints/
 # OS
 Thumbs.db
 
-# Markdown notes (incl. plan.md) are not committed, except README
+# Markdown notes (incl. plan.md) are not committed, except README and the Lin docs (HUMAN, 2026-11-19)
 *.md
 !README.md
+!docs/lin2025_spec.md
+!docs/lin2025_audit.md
+!docs/lin2025_targets.md
+!docs/findings.md
+!docs/lin2025_reproduction_report.md
 
 # Local agent settings
 .claude/
