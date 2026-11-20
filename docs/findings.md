@@ -156,3 +156,32 @@ Reading:
 4. Under v1.1 MAPPO never shares a carrier, and its margin over the heuristic grows from +0.64 to +2.39 pp. This is the only new behaviour A-42 induces. The shared-carrier fraction was already low on v1.0 (0.013-0.029), probably because co-channel NOMA interference already penalises sharing.
 
 Implication for step 4 (75 runs on v1.1): the pilot gives no sign that v1.1 would separate the methods as the paper does, or move them toward the paper's levels. This is a pilot with one seed; it is input for the HUMAN's step 4 decision, not a result.
+
+## F-12 | 2026-11-20 | Reproduction conclusion: what matches, what does not, and a non-learning heuristic above Lin's learned numbers
+
+Sources: `results/eval_test_2026-11-18/` (F-2); `results/t5_table4_snr_2026-11-20/` (test T-5, spec Section 13; `t5_scores.csv` sha256 0a5af570a29e..., `t5_decision.json` 9ea023182e90..., `t5_replay_per_L.csv` f74ac90b049a...); `results/v1_2_baselines_2026-11-20/` (`summary.csv` sha256 c641ac8204e2..., `per_seed.csv` 94737f9cd6250..., commit f4e8f0c, git_dirty false). Validation seeds 2000-2099, non-learning policies, POS, SIC unless noted; paired v1.2 - v1.0 difference with 95% bootstrap CI (10 000 resamples, RNG seed 0).
+
+What matches:
+1. Local_Computing (F-2): success 0.6271 vs Lin 0.6125 (A-32), latency 18.72 ms vs 18.76 ms, after calibration of c_cyc and kappa on non-learning data (T-1, T-3). Local_Computing is identical under v1.0 and v1.2 (summary.csv, diff 0.0 at every N).
+2. Table 4 under v1.2 (test T-5): replaying the Table 4 slot in `LinMECEnv` with an extra link loss of L dB, all 8 sensors match the paper's success/fail under both readings (R1, R2) for L in [5.0, 8.75] dB (16 of 121 grid values, one contiguous interval; `t5_scores.csv`). At L = 0 (v1.0) the replay gives 7/8 under each reading (MU6 predicted to succeed, paper says it fails), the same 14/16 as T-2, reproduced exactly. The pre-registered rule gave L* = 7.0 dB (A-44, lin-env-v1.2).
+
+What does not match:
+1. Learned methods (F-2, F-11): at N = 8 on v1.0 all six learned configurations reach 0.988-0.993 success against Lin's 0.4211-0.8563; the reproduction gate fails on all four items. POS_MADDPG_NOMA 0.9927 vs 0.8563. The v1.1 pilot (one seed) was also saturated (0.980 and 0.997).
+2. The ranking of methods and the SIC effect are not reproduced (F-2); this has not been tested on v1.2 because learned methods were not retrained on it.
+
+Heuristic levels on v1.2 (L = 7 dB), success rate v1.0 -> v1.2 [paired diff 95% CI, pp] (`results/v1_2_baselines_2026-11-20/summary.csv`):
+
+| Policy | N = 2 | N = 8 | N = 12 |
+|---|---|---|---|
+| NearestUAVFullPower | 0.998 -> 0.974 [-3.2, -1.7] | 0.9886 -> 0.9671 [-2.46, -1.84] | 0.9796 -> 0.9574 [-2.49, -1.95] |
+| GreedyLocalOrOffload | 0.998 -> 0.974 | 0.9971 -> 0.9755 | 0.9953 -> 0.9732 |
+| RandomPolicy | 0.770 -> 0.631 [-15.3, -12.5] | 0.7540 -> 0.6315 [-13.0, -11.4] | 0.7489 -> 0.6275 [-12.7, -11.6] |
+| LocalComputing | 0.609 | 0.6265 | 0.6248 |
+
+NearestUAVFullPower noSIC at N = 8: 0.9771 -> 0.9549 (diff -2.23 pp [-2.55, -1.90]); with SIC 0.9671, so SIC adds about 1.2 pp for this heuristic on v1.2. NearestUAVFullPower across N on v1.2: 0.974, 0.9735, 0.9705, 0.9671, 0.9601, 0.9574 for N = 2, 4, 6, 8, 10, 12 (slope about -0.17 pp per sensor). Mean latency on v1.2 at N = 8: 2.65 ms (heuristic), against 7.48 ms for Lin's POS_MADDPG_NOMA.
+
+Reading (plain):
+1. A link loss that makes Table 4 match under both readings lowers the heuristics by only about 2.2-2.5 pp (full power) and about 12-14 pp (random). The simple "offload to the nearest UAV at full power" heuristic still succeeds in 95.7-97.4% of tasks at every N, and GreedyLocalOrOffload in 97.2-97.6%. Both are above Lin's best learned result of 85.63% (POS_MADDPG_NOMA, N = 8). So under every Table-4-consistent reading tested here (T-2 candidates a-d at 14/16, and T-5 with L in [5.0, 8.75] dB), a non-learning heuristic exceeds Lin's learned numbers. Lin's reported 85.63% therefore cannot be reproduced as "a learned policy beating simple heuristics" in this environment family. Either the paper's environment is harder in a way the paper does not state, or their heuristics/learners are not comparable to ours; the paper does not let us decide.
+2. The Table 4 outcomes are consistent with a weaker link but do not by themselves require a loss of 7 dB: the descriptive scan with path-loss exponent alpha = 2.4 (L = 0) also matches 8/8 under both readings, and the heuristic success under such a model was not measured.
+
+Limits: the evidence for A-44 is the 6 offloading sensors of one slot; the feasible range was first seen in an exploratory probe (TE-100) before registration, so T-5 is a confirmation of a seen range, not a blind test; Table 4 has known inconsistencies (UAV assignment, A-31); A-44 is our assumption, not a value stated by Lin; learned methods were not retrained on v1.2, so no statement is made about what they would reach there; v1.0 and its results stay the reproduction milestone. The T-5 outputs were produced from commit 5acb60a, then `scripts/run_t5.py` received a lint-only change (itertools.pairwise); a rerun in a scratch folder gave byte-identical outputs.
