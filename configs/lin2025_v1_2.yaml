@@ -1,0 +1,45 @@
+# lin-env-v1.2 = lin-env-v1 (v1.0, configs/lin2025.yaml) + A-44, nothing else. A-42 is OFF.
+# See docs/lin2025_spec.md Section 13. Keep in sync with configs/lin2025.yaml (only the last block differs).
+# --- Scenario (spec Section 1) ---
+n_uavs: 2                    # P: Table 1 (K)
+n_sensors: 8                 # P: Table 1 (N; sweep 2..12)
+n_subcarriers: 4             # P: Table 1 (M)
+bandwidth_hz: 250.0e+6        # P: Table 1 "Carrier bandwidth 250 MHz", Section 6.1; A-3: per subcarrier
+area_m: 100.0                # P: Table 1 (L = W)
+uav_height_m: 100.0          # P: Table 1 (H, fixed)
+uav_hover_power_w: 168.4842  # A-37: Diao et al. 2021 Eq. 17 (Lin ref [31]), P_H
+uav_v_max: 50.0              # P: Table 1 (m/s)
+slot_s: 1.0                  # P: Table 1 (xi)
+n_slots: 10                  # P: Table 1; A-9 (T, slots per episode)
+p_max_w: 1.0                 # P: Table 1
+f_sensor_hz: 1.0e+9           # P: Table 1 (F_n)
+f_uav_hz: 1.4e+9              # P: Table 1 (unused, UAV compute time negligible)
+sensor_battery_j: [100.0e+3, 400.0e+3]  # P: Table 1; A-10 (U(low, high) per episode)
+uav_battery_j: [100.0e+3, 500.0e+3]     # P: Table 1; A-10
+rate_req_bps: 10.0e+6         # P: Table 1 (R_0)
+noise_w: 1.0e-10             # P: Table 1 (-100 dB); A-2
+beta0: 1.0e-5                # P: Table 1 (-50 dB); A-1, gain at 1 m
+
+# --- Tasks (A-5, A-33) ---
+task_unit_bits: 50.0e+3       # A-5: C = 0.05 Mbit
+task_poisson_lambda: 16.0    # A-5
+task_min_bits: 100.0e+3       # P: Table 1 (0.1 Mbit); A-5 clip
+task_max_bits: 1.5e+6         # P: Table 1 (1.5 Mbit); A-5 clip
+deadline_min_s: 0.001        # P: Table 1 (1 ms); A-33: D_n ~ U(min, max), independent of C_n
+deadline_max_s: 0.050        # P: Table 1 (50 ms); A-33
+
+# --- Local computing and energy ---
+c_cyc: 24.5                  # C-1: calibrated in test T-1 (LocalComputing latency 18.74 ms vs 18.76; results/T1_deadline_model_2026-11-13)
+kappa: 1.0009e-27            # C-2: calibrated in test T-3 with energy averaged over successful tasks (A-34); F^3 check 1e-27
+
+# --- UAV ---
+d_safe_m: 10.0               # A-16 (UAV minimum separation d_s)
+
+# --- Reward (P: Eq. 15) ---
+reward_success: 3.0          # P: Eq. 15
+reward_fail: -1.0            # P: Eq. 15
+
+# --- Extra link loss (lin-env-v1.2 only; docs/lin2025_spec.md Section 13) ---
+extra_link_loss_db: 7.0      # A-44: |h|^2 = beta0 10^(-L/10) / (H^2 + d^2); L* = 7.0 dB from test T-5
+                             # (results/t5_table4_snr_2026-11-20; F = [5.0, 8.75] dB, midpoint 6.875 -> 7.0).
+                             # Our assumption, NOT a value stated by Lin. lin2025.yaml (v1.0) has L = 0 (default)

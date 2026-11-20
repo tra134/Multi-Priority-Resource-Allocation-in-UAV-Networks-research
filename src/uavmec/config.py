@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
@@ -46,6 +47,8 @@ class LinConfig:
     reward_fail: float = -1.0
     # "independent": B_n = f_n B (lin-env-v1.0). "proportional": A-42 (lin-env-v1.1), see lin_env.py.
     bandwidth_sharing: str = "independent"
+    # A-44 (lin-env-v1.2): uniform extra loss (dB) on every sensor-UAV link. 0.0 = v1.0, bit-identical.
+    extra_link_loss_db: float = 0.0
 
     def __post_init__(self) -> None:
         _validate(self)
@@ -83,6 +86,8 @@ def _validate(c: LinConfig) -> None:
         raise ValueError("deadline_min_s must be <= deadline_max_s")
     if c.reward_success <= c.reward_fail:
         raise ValueError("reward_success must be larger than reward_fail")
+    if not math.isfinite(c.extra_link_loss_db):  # A-44
+        raise ValueError(f"extra_link_loss_db must be finite, got {c.extra_link_loss_db!r}")
     if c.bandwidth_sharing not in BANDWIDTH_SHARING:
         raise ValueError(f"bandwidth_sharing must be one of {BANDWIDTH_SHARING}, got {c.bandwidth_sharing!r}")
 

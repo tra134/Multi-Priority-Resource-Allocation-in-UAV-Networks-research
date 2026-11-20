@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import itertools
 import json
 import math
 import subprocess
@@ -112,7 +113,7 @@ def decide(f: list[float], grid, step: float = 0.25) -> dict:
     if not f:
         return {"adopted": False, "reason": "F empty: no change", "L_star": None, "interval": None}
     runs, cur = [], [f[0]]
-    for a, b in zip(f, f[1:], strict=False):
+    for a, b in itertools.pairwise(f):
         if abs((b - a) - step) < 1e-9:
             cur.append(b)
         else:

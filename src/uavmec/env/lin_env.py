@@ -59,6 +59,9 @@ class LinMECEnv:
         if s3_variant is not None and cfg.bandwidth_sharing != "independent":
             # A-42 and the S-3 N1 rules are two ways to set B_n; the S-3 path would ignore A-42 silently
             raise ValueError("s3_variant cannot be combined with bandwidth_sharing != 'independent'")
+        if s3_variant is not None and cfg.extra_link_loss_db != 0.0:  # A-44
+            # the S-3 channel path would apply its own gain rules on top of A-44 silently
+            raise ValueError("s3_variant cannot be combined with extra_link_loss_db != 0 (A-44)")
         self.cfg = cfg
         self.sic = sic
         self.mode = mode
@@ -93,7 +96,8 @@ class LinMECEnv:
     def _new_slot(self) -> None:
         self.task_sizes, self.task_deadlines = sample_tasks(self._rng, self.cfg.n_sensors, self.cfg)
         self.channel_gain = channel_gain(
-            self.sensor_pos, self.uav_pos, self.cfg.uav_height_m, self.cfg.beta0
+            self.sensor_pos, self.uav_pos, self.cfg.uav_height_m, self.cfg.beta0,
+            self.cfg.extra_link_loss_db,  # A-44 (0.0 in v1.0)
         )
         if self.s3 is not None:  # S-3 A1-const (other variants: unchanged)
             self.channel_gain = self.s3.channel_gain(self.channel_gain)
